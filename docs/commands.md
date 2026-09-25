@@ -634,7 +634,7 @@ cup task-members abc123 --json
 
 ### `cup auth`
 
-Check authentication status. Validates your API token and shows your user info.
+Check authentication status. Validates your API token and shows your user info. Failed authentication exits with code 1 in every output mode. With `--json` or `CU_OUTPUT=json`, stdout remains the JSON result (`authenticated: false` on failure), without an additional text error.
 
 ```bash
 cup auth

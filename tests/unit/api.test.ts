@@ -2391,6 +2391,7 @@ describe('rate limit retry', () => {
   beforeEach(async () => {
     vi.stubGlobal('fetch', mockFetch)
     vi.clearAllMocks()
+    mockFetch.mockReset()
     vi.useFakeTimers()
     const { ClickUpClient } = await import('../../src/api.js')
     client = new ClickUpClient({ apiToken: 'pk_test', teamId: 't' })
@@ -2463,9 +2464,69 @@ describe('rate limit retry', () => {
     expect(mockFetch).toHaveBeenCalledTimes(4)
   })
 
-  it('retries on 503', async () => {
+  it.each([502, 503, 504])('does not replay task creation after HTTP %i', async status => {
     mockFetch
-      .mockReturnValueOnce(retryableResponse(503, 'Service Unavailable'))
+      .mockReturnValueOnce(retryableResponse(status, 'Gateway error'))
+      .mockReturnValueOnce(mockResponse({ id: 'duplicate', name: 'Task' }))
+    const promise = client.createTask('list1', { name: 'Task' }).catch((err: unknown) => err)
+    await vi.runAllTimersAsync()
+    const result = await promise
+    expect(result).toBeInstanceOf(Error)
+    expect((result as Error).message).toContain(String(status))
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.clickup.com/api/v2/list/list1/task',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it.each([502, 503, 504])('does not replay v3 Doc creation after HTTP %i', async status => {
+    mockFetch.mockReturnValue(retryableResponse(status, 'Gateway error'))
+    const promise = client.createDoc('workspace1', 'Doc').catch((err: unknown) => err)
+    await vi.runAllTimersAsync()
+    const result = await promise
+    expect(result).toBeInstanceOf(Error)
+    expect((result as Error).message).toContain(String(status))
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['PUT', 'PATCH', 'DELETE'] as const)(
+    'does not replay %s mutations after a gateway error',
+    async method => {
+      mockFetch.mockReturnValue(retryableResponse(503, 'Gateway error'))
+      const operation =
+        method === 'PUT'
+          ? client.updateTask('abc', { name: 'Updated' })
+          : method === 'PATCH'
+            ? client.updateTimeEstimatesByUser('abc', [])
+            : client.deleteTask('abc')
+      const promise = operation.catch((err: unknown) => err)
+      await vi.runAllTimersAsync()
+      expect(await promise).toBeInstanceOf(Error)
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(mockFetch.mock.calls[0]![1]).toEqual(expect.objectContaining({ method }))
+    },
+  )
+
+  it('still retries task creation explicitly rejected with 429', async () => {
+    mockFetch
+      .mockReturnValueOnce(response429('1'))
+      .mockReturnValueOnce(mockResponse({ id: 'abc', name: 'Task' }))
+    const promise = client.createTask('list1', { name: 'Task' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect((await promise).id).toBe('abc')
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not replay task creation after a transport error', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'))
+    await expect(client.createTask('list1', { name: 'Task' })).rejects.toThrow('fetch failed')
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([502, 503, 504])('retries reads on HTTP %i', async status => {
+    mockFetch
+      .mockReturnValueOnce(retryableResponse(status, 'Gateway error'))
       .mockReturnValueOnce(mockResponse({ id: 'abc', name: 'Task' }))
     const promise = client.getTask('abc')
     await vi.advanceTimersByTimeAsync(1000)

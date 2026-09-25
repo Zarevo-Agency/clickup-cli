@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile)
 const config = { apiToken: 'pk_test', teamId: 'team_1' }
 
 const mockLoadConfig = vi.fn(() => config)
+const mockCheckAuth = vi.fn()
 const mockGetTask = vi.fn()
 const mockRunSummaryCommand = vi.fn()
 const mockEditChecklistItem = vi.fn()
@@ -28,6 +29,10 @@ async function loadCli() {
 
   vi.doMock('../../src/config.js', () => ({
     loadConfig: mockLoadConfig,
+  }))
+
+  vi.doMock('../../src/commands/auth.js', () => ({
+    checkAuth: mockCheckAuth,
   }))
 
   vi.doMock('../../src/commands/get.js', async importOriginal => {
@@ -252,6 +257,99 @@ describe('CLI entry point', () => {
     expect(stderrCalls.some(line => line.includes('t4') && line.includes('Invalid status'))).toBe(
       true,
     )
+  })
+})
+
+describe('cup auth output', () => {
+  const originalCuOutput = process.env['CU_OUTPUT']
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockLoadConfig.mockClear().mockReturnValue(config)
+    mockCheckAuth.mockReset()
+    mockIsTTY.mockReset().mockReturnValue(false)
+    mockShouldOutputJson
+      .mockReset()
+      .mockImplementation(forceJson => forceJson || process.env['CU_OUTPUT'] === 'json')
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.exitCode = undefined
+    delete process.env['CU_OUTPUT']
+  })
+
+  afterEach(() => {
+    process.exitCode = undefined
+    if (originalCuOutput === undefined) {
+      delete process.env['CU_OUTPUT']
+    } else {
+      process.env['CU_OUTPUT'] = originalCuOutput
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it.each([
+    { name: '--json', args: ['auth', '--json'], output: undefined },
+    { name: 'CU_OUTPUT=json', args: ['auth'], output: 'json' },
+  ])(
+    'sets exit code 1 and prints only the JSON result when unauthenticated via $name',
+    async ({ args, output }) => {
+      const result = { authenticated: false, error: 'Invalid API token' }
+      mockCheckAuth.mockResolvedValue(result)
+      if (output !== undefined) process.env['CU_OUTPUT'] = output
+
+      const { buildProgram } = await loadCli()
+      const program = buildProgram('cup')
+
+      await program.parseAsync(args, { from: 'user' })
+
+      expect(console.log).toHaveBeenCalledExactlyOnceWith(JSON.stringify(result, null, 2))
+      expect(console.error).not.toHaveBeenCalled()
+      expect(process.exitCode).toBe(1)
+    },
+  )
+
+  it('keeps a successful JSON authentication at exit code 0', async () => {
+    const result = { authenticated: true, user: { id: 42, username: 'konrad' } }
+    mockCheckAuth.mockResolvedValue(result)
+
+    const { buildProgram } = await loadCli()
+    const program = buildProgram('cup')
+
+    await program.parseAsync(['auth', '--json'], { from: 'user' })
+
+    expect(console.log).toHaveBeenCalledExactlyOnceWith(JSON.stringify(result, null, 2))
+    expect(process.exitCode).toBeUndefined()
+  })
+
+  it('keeps successful text authentication unchanged', async () => {
+    mockCheckAuth.mockResolvedValue({
+      authenticated: true,
+      user: { id: 42, username: 'konrad' },
+    })
+
+    const { buildProgram } = await loadCli()
+    const program = buildProgram('cup')
+
+    await program.parseAsync(['auth'], { from: 'user' })
+
+    expect(console.log).toHaveBeenCalledExactlyOnceWith('Authenticated as @konrad (id: 42)')
+    expect(console.error).not.toHaveBeenCalled()
+    expect(process.exitCode).toBeUndefined()
+  })
+
+  it('keeps failed text authentication on the error path', async () => {
+    mockCheckAuth.mockResolvedValue({ authenticated: false, error: 'Invalid API token' })
+
+    const { buildProgram } = await loadCli()
+    const program = buildProgram('cup')
+
+    await program.parseAsync(['auth'], { from: 'user' })
+
+    expect(console.log).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      'Authentication failed: Invalid API token',
+    )
+    expect(process.exitCode).toBe(1)
   })
 })
 

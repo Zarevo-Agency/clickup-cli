@@ -418,6 +418,7 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
         const result = await checkAuth(config)
         if (shouldOutputJson(opts.json ?? false)) {
           console.log(JSON.stringify(result, null, 2))
+          if (!result.authenticated) process.exitCode = 1
         } else if (result.authenticated && result.user) {
           console.log(`Authenticated as @${result.user.username} (id: ${result.user.id})`)
         } else {

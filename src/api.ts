@@ -564,12 +564,15 @@ export class ClickUpClient {
 
   private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
     const maxRetries = 3
+    const method = (init.method ?? 'GET').toUpperCase()
+    const isRead = method === 'GET' || method === 'HEAD'
     let attempt = 0
     for (;;) {
       await this.rateLimiter?.acquire()
       const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30_000) })
       const retryable =
-        res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504
+        res.status === 429 ||
+        (isRead && (res.status === 502 || res.status === 503 || res.status === 504))
       if (!retryable || attempt >= maxRetries) return res
       if (res.status === 429) this.rateLimiter?.penalize()
       attempt++
