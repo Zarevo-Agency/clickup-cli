@@ -117,7 +117,7 @@ export async function listStatuses(
     if (blocking.length > 0) {
       const used = [...new Set(blocking.map(t => t.status.status))].join(', ')
       throw new Error(
-        `${blocking.length} task(s) in list ${listId} still use ${used}. Move them first or remap statuses in ClickUp.`,
+        `${blocking.length} task(s) in list ${listId} still use ${used}. Keep those names in --set, move the tasks, then set the final statuses.`,
       )
     }
   }

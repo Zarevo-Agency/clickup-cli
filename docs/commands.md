@@ -1397,7 +1397,7 @@ cup list-create <spaceId> "New List" --copy-statuses-from <spaceId>
 
 ### `cup list-statuses <listId>`
 
-Show the status set of a list, or replace it. `--set` takes comma-separated names: the first becomes the open status, the last the closed one, everything in between is custom. Existing statuses keep their color. `--copy-from` copies the set from another list or a space. The list then overrides the space statuses, and the command reads the list back to confirm ClickUp applied them. It refuses to drop a status that any task in the list still uses, including closed tasks.
+Show the status set of a list, or replace it. `--set` takes comma-separated names: the first becomes the open status, the last the closed one, everything in between is custom. Existing statuses keep their color. `--copy-from` copies the set from another list or a space. The list then overrides the space statuses, and the command reads the list back to confirm ClickUp applied them. It refuses to drop a status that any task in the list still uses, including closed tasks. ClickUp matches task statuses by name, so a direct rename would orphan those tasks. To rename, first set a list that contains both the old and the new names, move the tasks, then set the final list.
 
 ```bash
 cup list-statuses <listId>
