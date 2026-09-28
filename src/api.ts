@@ -5,6 +5,7 @@ import type { RateLimiter } from './util/rate-limit.js'
 
 const BASE_URL = 'https://api.clickup.com/api/v2'
 const BASE_URL_V3 = 'https://api.clickup.com/api/v3'
+export const API_ORIGIN = 'https://api.clickup.com'
 const MAX_PAGES = 100
 
 export interface CustomField {
@@ -507,6 +508,12 @@ export interface SharedHierarchy {
   }
 }
 
+export interface RawApiResponse {
+  status: number
+  statusText: string
+  body: unknown
+}
+
 interface ClientConfig {
   apiToken: string
   teamId?: string
@@ -716,6 +723,38 @@ export class ClickUpClient {
       throw new Error('Unexpected API response: expected JSON array')
     }
     return parsed as T[]
+  }
+
+  /**
+   * Send any request to api.clickup.com (backs `cup api`). Returns the status and
+   * parsed body without throwing on HTTP errors; an empty body becomes `{}`.
+   */
+  async rawRequest(
+    url: string,
+    init: { method: string; body?: string | FormData },
+  ): Promise<RawApiResponse> {
+    const origin = new URL(url).origin
+    if (origin !== API_ORIGIN) {
+      throw new Error(`Refusing to send the ClickUp API token to ${origin}`)
+    }
+    const res = await this.fetchWithRetry(url, {
+      method: init.method,
+      headers: {
+        Authorization: this.apiToken,
+        ...(typeof init.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(init.body !== undefined ? { body: init.body } : {}),
+    })
+    const text = await res.text()
+    let body: unknown = {}
+    if (text.trim()) {
+      try {
+        body = JSON.parse(text)
+      } catch {
+        body = text
+      }
+    }
+    return { status: res.status, statusText: res.statusText, body }
   }
 
   async getMe(): Promise<{ id: number; username: string; timezone?: string }> {

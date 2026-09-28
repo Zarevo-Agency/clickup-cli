@@ -258,6 +258,16 @@ import {
   formatWebhooks,
   formatWebhooksMarkdown,
 } from './commands/webhook.js'
+import { runApiCommand } from './commands/api.js'
+import type { ApiCommandOptions } from './commands/api.js'
+import {
+  loadOperations,
+  searchOperations,
+  findOperation,
+  formatOperations,
+  formatOperationsMarkdown,
+  formatOperationMarkdown,
+} from './commands/api-ops.js'
 import { timeEstimateByUserCommand } from './commands/time-estimate-by-user.js'
 import {
   fetchSharedHierarchy,
@@ -4358,6 +4368,91 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           console.log(JSON.stringify(result, null, 2))
         } else {
           console.log(`Deleted webhook ${result.webhookId}`)
+        }
+      }),
+    )
+
+  const apiCmd = program
+    .command('api')
+    .description('Raw request to any ClickUp API endpoint; find endpoints with "api ops"')
+    .argument('<method>', 'HTTP method: GET, POST, PUT, PATCH or DELETE')
+    .argument('<path>', 'API path (/v2/..., /v3/...) or https://api.clickup.com URL')
+    .option('-q, --query <key=value>', 'Query parameter, repeatable (key[]=v appends)', collect, [])
+    .option('-d, --data <json>', 'JSON request body')
+    .option('--data-file <path>', 'Read the JSON body from a file ("-" for stdin)')
+    .option(
+      '-F, --form <key=value>',
+      'Multipart field, repeatable (key=@path uploads a file)',
+      collect,
+      [],
+    )
+    .option('--paginate', 'Follow pagination and merge all pages (GET only)')
+    .option('--max-pages <n>', 'Page limit for --paginate (default 100)')
+    .option('--dry-run', 'Print the request instead of sending it')
+    .option('--confirm', 'Required for DELETE requests')
+    .option('--json', 'Accepted for consistency; output is always JSON')
+    .action(
+      wrapAction(async (method: string, path: string, opts: ApiCommandOptions) => {
+        const config = loadConfig(getProfileName())
+        const result = await runApiCommand(config, method, path, opts)
+        if (result.ok) {
+          console.log(JSON.stringify(result.body, null, 2))
+        } else {
+          console.error(JSON.stringify(result.error, null, 2))
+          process.exitCode = 1
+        }
+      }),
+    )
+
+  /**
+   * Options after "api ops|op" are parsed by the parent "api" command first, so refuse
+   * raw-request flags there and honour --json from either level.
+   */
+  function apiLookupJson(subcommand: string, opts: { json?: boolean }): boolean {
+    const used = apiCmd.options
+      .filter(o => o.long !== '--json' && apiCmd.getOptionValueSource(o.attributeName()) === 'cli')
+      .map(o => o.long)
+    if (used.length > 0) {
+      throw new Error(
+        `${used.join(', ')} cannot be used with "api ${subcommand}" (only with "api <method> <path>")`,
+      )
+    }
+    return shouldOutputJson(Boolean(opts.json || apiCmd.opts<{ json?: boolean }>().json))
+  }
+
+  apiCmd
+    .command('ops [query...]')
+    .description(
+      'Search the bundled ClickUp API spec by method, path, operation ID, summary or tag',
+    )
+    .option('--json', 'Force JSON output even in terminal')
+    .action(
+      wrapAction(async (terms: string[], opts: { json?: boolean }) => {
+        const json = apiLookupJson('ops', opts)
+        const query = terms.join(' ')
+        const ops = searchOperations(await loadOperations(), query)
+        if (json) {
+          console.log(JSON.stringify(ops, null, 2))
+        } else if (isTTY()) {
+          console.log(formatOperations(ops, query))
+        } else {
+          console.log(formatOperationsMarkdown(ops, query))
+        }
+      }),
+    )
+
+  apiCmd
+    .command('op <operationId>')
+    .description('Show parameters, body schema and example for one API operation')
+    .option('--json', 'Force JSON output even in terminal')
+    .action(
+      wrapAction(async (operationId: string, opts: { json?: boolean }) => {
+        const json = apiLookupJson('op', opts)
+        const op = findOperation(await loadOperations(), operationId)
+        if (json) {
+          console.log(JSON.stringify(op, null, 2))
+        } else {
+          console.log(formatOperationMarkdown(op))
         }
       }),
     )

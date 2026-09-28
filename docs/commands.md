@@ -180,6 +180,8 @@ cup task https://app.clickup.com/t/9017679539/DEV-2760   # same as: cup task DEV
 | `cup list-comments <listId>`                             | List comments on a list                                                     |
 | `cup view-comments <viewId>`                             | List comments on a view                                                     |
 | `cup webhook list`                                       | List webhooks                                                               |
+| `cup api ops [query...]`                                 | Search ClickUp API endpoints (bundled official spec)                        |
+| `cup api op <operationId>`                               | Show params, body schema and example of an endpoint                         |
 | `cup shared`                                             | Show shared spaces, folders, and lists                                      |
 | `cup chat channels`                                      | List chat channels you follow                                               |
 | `cup chat channel <channelId>`                           | Show channel details                                                        |
@@ -256,6 +258,7 @@ cup task https://app.clickup.com/t/9017679539/DEV-2760   # same as: cup task DEV
 | `cup webhook create`                                     | Create a webhook                                                            |
 | `cup webhook update <webhookId>`                         | Update a webhook                                                            |
 | `cup webhook delete <webhookId>`                         | Delete a webhook                                                            |
+| `cup api <method> <path>`                                | Raw request to any endpoint (no cup safety checks)                          |
 | `cup merge <sourceTaskId> <intoTaskId>`                  | Merge a task into another                                                   |
 | `cup chat send <channelId>`                              | Send a message to a channel                                                 |
 | `cup chat channel-create <name>`                         | Create a new chat channel                                                   |
@@ -2378,6 +2381,88 @@ In TTY mode without `--confirm`: shows the webhook URL and prompts for confirmat
 | ----------- | -------- | ----------------------------------------------------------- |
 | `--confirm` | no       | Skip confirmation prompt (required in non-interactive mode) |
 | `--json`    | no       | Force JSON output                                           |
+
+---
+
+## Raw API Access
+
+`cup api` reaches every ClickUp API endpoint, including the ones without a dedicated command, so agents never need `curl` with the token. Prefer the dedicated commands where they exist: they resolve names, validate statuses and read back what they changed. `cup api` sends exactly what you give it and does none of that.
+
+Endpoints are looked up offline in an index built from the official ClickUp OpenAPI specs (v2 and v3, vendored in `openapi/`).
+
+### `cup api ops [query...]`
+
+Search the bundled spec. Every word must match the method, path, operation ID, summary or tag (case-insensitive). Without a query, all operations are listed. Paths are printed ready for `cup api`.
+
+```bash
+cup api ops                    # all operations
+cup api ops time entries       # GET/POST/... time entry endpoints
+cup api ops chat message --json
+```
+
+| Flag     | Required | Description       |
+| -------- | -------- | ----------------- |
+| `--json` | no       | Force JSON output |
+
+### `cup api op <operationId>`
+
+Show one operation (operation ID is case-insensitive): method, path, description, path and query parameters (type, required, description; array params are listed as `key[]` unless the spec shows the plain `key=` form, as for `group_ids` or the JSON-encoded `custom_fields`), the request body as a schema tree (type, required, enum, nested fields, `one of` variants) and the spec's example bodies. Markdown when piped, `--json` for the raw index entry.
+
+```bash
+cup api op CreateTask
+cup api op getChatMessages --json
+```
+
+| Flag     | Required | Description       |
+| -------- | -------- | ----------------- |
+| `--json` | no       | Force JSON output |
+
+### `cup api <method> <path>`
+
+Send a raw request. `<method>` is `GET`, `POST`, `PUT`, `PATCH` or `DELETE` (case-insensitive). The response body is always printed as pretty JSON on stdout (empty responses print `{}`), regardless of TTY or `--json`.
+
+```bash
+cup api GET /v2/team/{team_id}/space -q archived=false
+cup api GET /v2/list/901200300/task -q 'statuses[]=to do' -q 'statuses[]=in progress' --paginate
+cup api POST /v2/list/901200300/task -d '{"name":"Draft release notes","status":"to do"}'
+cup api PUT /v2/task/PROJ-42 -q custom_task_ids=true -q 'team_id={team_id}' --data-file body.json
+cup api GET /v3/workspaces/{workspace_id}/docs --paginate
+cup api POST /v2/task/abc123/attachment -F attachment=@./report.pdf
+cup api DELETE /v2/task/abc123 --confirm
+cup api POST /v2/list/901200300/task -d '{"name":"x"}' --dry-run
+```
+
+**Paths.** `/v2/...` and `/v3/...` (as printed by `cup api ops`), `/api/v2/...` and `/api/v3/...`, a bare path without version (treated as v2), or a full `https://api.clickup.com/api/...` URL. Any other host is refused, so the token only ever goes to `api.clickup.com`. `{team}`, `{team_id}`, `{workspace}` and `{workspace_id}` (any case) are replaced with the configured workspace ID in the path and in `-q` values; any other `{placeholder}` left in the path is an error.
+
+**Query.** `-q key=value` is repeatable. Keys ending in `[]` are appended (`-q 'tags[]=a' -q 'tags[]=b'`; quote them, `[]` is a glob in zsh); a plain key replaces the same key from the path, and repeating it sends it repeatedly (`-q group_ids=a -q group_ids=b`).
+
+**Body.** `-d '<json>'` or `--data-file <path>` (`-` reads stdin). The JSON is validated before sending and sent unchanged. For uploads use multipart fields: `-F key=value` or `-F key=@path` (repeatable). A JSON body and `-F` cannot be combined, and GET requests cannot have a body.
+
+**Pagination.** `--paginate` (GET only) follows the pattern it finds in the first response and merges the array field of every page into one object:
+
+| Pattern                                     | How pages are fetched                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `last_page` boolean plus an array field     | `page` is incremented (starting at the given `page`, default 0) until `last_page` true |
+| v3 `next_cursor`                            | `cursor=<next_cursor>` until the cursor is empty or repeats, or a page is empty        |
+| Comment endpoints (`.../comment`, comments) | `start`/`start_id` of the oldest comment, de-duplicated by ID, until a short page      |
+
+`--max-pages <n>` (default 100) caps the number of requests and prints a warning on stderr when hit; the merged object keeps the last page's `last_page` / `next_cursor` so you can continue. When no pattern is found, the single response is printed with a warning.
+
+**Errors.** A non-2xx response exits with code 1 and prints `{"error":{"status":...,"ecode":...,"message":...,"body":...}}` to stderr. 429 responses are retried for every method; 502/503/504 only for GET, never for writes.
+
+**Safety.** `DELETE` needs `--confirm` (in a terminal you are prompted instead). Writes (anything but GET) to `/team/<id>`, `/workspaces/<id>` or with a `team_id` query parameter for a workspace other than the configured one are refused; use `-p <profile>` for other workspaces. `cup api` bypasses cup's status matching and read-back, so read the object back after a write to confirm it.
+
+| Flag                      | Required | Description                                                          |
+| ------------------------- | -------- | -------------------------------------------------------------------- |
+| `-q, --query <key=value>` | no       | Query parameter, repeatable (`key[]=value` appends)                  |
+| `-d, --data <json>`       | no       | JSON request body                                                    |
+| `--data-file <path>`      | no       | Read the JSON body from a file (`-` for stdin)                       |
+| `-F, --form <key=value>`  | no       | Multipart field, repeatable (`key=@path` uploads a file)             |
+| `--paginate`              | no       | Follow pagination and merge all pages (GET only)                     |
+| `--max-pages <n>`         | no       | Page limit for `--paginate` (default 100)                            |
+| `--dry-run`               | no       | Print method, URL, query and body as JSON without sending (no token) |
+| `--confirm`               | no       | Required for `DELETE` (only valid on `DELETE`)                       |
+| `--json`                  | no       | Accepted for consistency; output is always JSON                      |
 
 ---
 
