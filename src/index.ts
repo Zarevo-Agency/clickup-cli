@@ -126,6 +126,7 @@ import {
 } from './commands/export.js'
 import type { ExportOptions, ExportSummary } from './commands/export.js'
 import { listDocs, formatDocs, formatDocsMarkdown } from './commands/docs.js'
+import type { DocListFilters } from './commands/docs.js'
 import {
   getDocInfo,
   formatDocInfo,
@@ -138,6 +139,7 @@ import {
   createDocPage,
   editDocPage,
 } from './commands/doc.js'
+import type { CreateDocFlags } from './commands/doc.js'
 import { listFolders, formatFolders, formatFoldersMarkdown } from './commands/folders.js'
 import {
   startTimer,
@@ -2646,11 +2648,19 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
   program
     .command('docs [query]')
     .description('List workspace docs (optionally filter by name)')
+    .option('--creator <userId>', 'Only docs created by this user ID (or "me")')
+    .option('--parent <id>', 'Only docs under this parent ID')
+    .option(
+      '--parent-type <type>',
+      'Only docs whose parent has this type: space, folder, list, everything, workspace',
+    )
+    .option('--archived', 'Return archived docs')
+    .option('--deleted', 'Return deleted docs')
     .option('--json', 'Force JSON output even in terminal')
     .action(
-      wrapAction(async (query: string | undefined, opts: { json?: boolean }) => {
+      wrapAction(async (query: string | undefined, opts: DocListFilters & { json?: boolean }) => {
         const config = loadConfig(getProfileName())
-        const docs = await listDocs(config, query)
+        const docs = await listDocs(config, query, opts)
         if (shouldOutputJson(opts.json ?? false)) {
           console.log(JSON.stringify(docs, null, 2))
         } else if (isTTY()) {
@@ -2882,17 +2892,26 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
     .command('doc-create <title>')
     .description('Create a new doc')
     .option('-c, --content <text>', 'Initial content (markdown)')
+    .option('--parent <id>', 'Create the doc in this space, folder, list or workspace')
+    .option(
+      '--parent-type <type>',
+      'Parent type for --parent: space, folder, list, everything, workspace',
+    )
+    .option('--visibility <visibility>', 'public, private, personal or hidden')
+    .option('--no-create-page', 'Create the doc without a root page (cannot be used with -c)')
     .option('--json', 'Force JSON output even in terminal')
     .action(
-      wrapAction(async (title: string, opts: { content?: string; json?: boolean }) => {
-        const config = loadConfig(getProfileName())
-        const result = await createDoc(config, title, opts.content)
-        if (shouldOutputJson(opts.json ?? false)) {
-          console.log(JSON.stringify(result, null, 2))
-        } else {
-          console.log(`Created doc "${result.title}" (${result.id})`)
-        }
-      }),
+      wrapAction(
+        async (title: string, opts: CreateDocFlags & { content?: string; json?: boolean }) => {
+          const config = loadConfig(getProfileName())
+          const result = await createDoc(config, title, opts.content, opts)
+          if (shouldOutputJson(opts.json ?? false)) {
+            console.log(JSON.stringify(result, null, 2))
+          } else {
+            console.log(`Created doc "${result.title}" (${result.id})`)
+          }
+        },
+      ),
     )
 
   program
@@ -2904,13 +2923,22 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
       'Read page content from a file ("-" for stdin); avoids shell quoting. Mutually exclusive with -c',
     )
     .option('--parent-page <pageId>', 'Parent page ID for nesting')
+    .option('--sub-title <text>', 'Page subtitle')
+    .option('--content-format <format>', 'Content format: md (default) or plain')
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
         async (
           docId: string,
           name: string,
-          opts: { content?: string; contentFile?: string; parentPage?: string; json?: boolean },
+          opts: {
+            content?: string
+            contentFile?: string
+            parentPage?: string
+            subTitle?: string
+            contentFormat?: string
+            json?: boolean
+          },
         ) => {
           opts.content = resolveTextInput({
             inline: opts.content,
@@ -2919,7 +2947,12 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
             fileFlag: '--content-file',
           })
           const config = loadConfig(getProfileName())
-          const page = await createDocPage(config, docId, name, opts.content, opts.parentPage)
+          const page = await createDocPage(config, docId, name, {
+            content: opts.content,
+            parentPageId: opts.parentPage,
+            subTitle: opts.subTitle,
+            contentFormat: opts.contentFormat,
+          })
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(page, null, 2))
           } else {
@@ -2933,18 +2966,29 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
     .command('doc-page-edit <docId> <pageId>')
     .description('Edit a doc page')
     .option('--name <text>', 'New page name')
+    .option('--sub-title <text>', 'New page subtitle')
     .option('-c, --content <text>', 'New page content (markdown)')
     .option(
       '--content-file <path>',
       'Read new page content from a file ("-" for stdin); avoids shell quoting. Mutually exclusive with -c',
     )
+    .option('--mode <mode>', 'How content is applied: replace (default), append, prepend')
+    .option('--content-format <format>', 'Content format: md (default) or plain')
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
         async (
           docId: string,
           pageId: string,
-          opts: { name?: string; content?: string; contentFile?: string; json?: boolean },
+          opts: {
+            name?: string
+            subTitle?: string
+            content?: string
+            contentFile?: string
+            mode?: string
+            contentFormat?: string
+            json?: boolean
+          },
         ) => {
           opts.content = resolveTextInput({
             inline: opts.content,
@@ -2955,7 +2999,10 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           const config = loadConfig(getProfileName())
           const page = await editDocPage(config, docId, pageId, {
             name: opts.name,
+            subTitle: opts.subTitle,
             content: opts.content,
+            mode: opts.mode,
+            contentFormat: opts.contentFormat,
           })
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(page, null, 2))

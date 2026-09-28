@@ -670,17 +670,24 @@ cup shared --json
 
 ### `cup docs [query]`
 
-List docs in your workspace. Optionally filter by name.
+List docs in your workspace, following pagination until every matching doc is read. Optionally filter by name (client-side) and by the search filters of ClickUp's Docs API.
 
 ```bash
 cup docs
 cup docs "design"
-cup docs --json
+cup docs --parent 90120000001 --parent-type folder   # docs in a folder
+cup docs --creator me
+cup docs --archived --json
 ```
 
-| Flag     | Required | Description       |
-| -------- | -------- | ----------------- |
-| `--json` | no       | Force JSON output |
+| Flag                   | Required | Description                                                                                |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `--creator <userId>`   | no       | Only docs created by this user ID (or `me`)                                                |
+| `--parent <id>`        | no       | Only docs under this parent ID                                                             |
+| `--parent-type <type>` | no       | Only docs whose parent has this type: `space`, `folder`, `list`, `everything`, `workspace` |
+| `--archived`           | no       | Return archived docs                                                                       |
+| `--deleted`            | no       | Return deleted docs                                                                        |
+| `--json`               | no       | Force JSON output                                                                          |
 
 ### `cup doc <docId> [pageId]`
 
@@ -1472,20 +1479,27 @@ cup space-rename <spaceId> "Design System" --json
 
 ### `cup doc-create <title>`
 
-Create a new doc in your workspace. The doc is created with a root page named after the title; `-c/--content` writes that page's initial markdown content.
+Create a new doc in your workspace, or inside a space, folder or list with `--parent` and `--parent-type`. The doc is created with a root page named after the title; `-c/--content` writes that page's initial markdown content.
 
 ```bash
 cup doc-create "Architecture Notes"
 cup doc-create "Draft" -c "# Initial content"
+cup doc-create "Kickoff" --parent 90120000001 --parent-type folder
+cup doc-create "Private Notes" --visibility private
+cup doc-create "Handbook" --no-create-page
 cup doc-create "Plan" --json
 ```
 
-| Flag            | Required | Description                |
-| --------------- | -------- | -------------------------- |
-| `-c, --content` | no       | Initial content (markdown) |
-| `--json`        | no       | Force JSON output          |
+| Flag                        | Required           | Description                                                                            |
+| --------------------------- | ------------------ | -------------------------------------------------------------------------------------- |
+| `-c, --content`             | no                 | Initial content (markdown)                                                             |
+| `--parent <id>`             | with --parent-type | Space, folder, list or workspace ID to create the doc in                               |
+| `--parent-type <type>`      | with --parent      | `space`, `folder`, `list`, `everything` or `workspace`                                 |
+| `--visibility <visibility>` | no                 | `public`, `private`, `personal` or `hidden`                                            |
+| `--no-create-page`          | no                 | Create the doc without a root page (add pages with `doc-page-create`; cannot use `-c`) |
+| `--json`                    | no                 | Force JSON output                                                                      |
 
-ClickUp's Create Doc endpoint accepts only a name, so the title and content are applied to the doc's root page in a follow-up call. If the doc is created but its root page cannot be written, the error includes the new doc ID so the partial doc can be found.
+ClickUp's Create Doc endpoint takes no page title or content, so the title and content are applied to the doc's root page in a follow-up call. If the doc is created but its root page cannot be written, the error includes the new doc ID so the partial doc can be found. `--parent` and `--parent-type` must be given together.
 
 ### `cup doc-page-create <docId> <name>`
 
@@ -1496,34 +1510,42 @@ cup doc-page-create abc123 "Getting Started"
 cup doc-page-create abc123 "Setup" -c "# Setup guide"
 cup doc-page-create abc123 "Release Notes" --content-file notes.md
 cup doc-page-create abc123 "Sub Section" --parent-page page456
+cup doc-page-create abc123 "Log" --sub-title "Weekly updates" -c "Plain text" --content-format plain
 cup doc-page-create abc123 "Page" --json
 ```
 
-| Flag                     | Required | Description                                                                 |
-| ------------------------ | -------- | --------------------------------------------------------------------------- |
-| `-c, --content`          | no       | Page content (markdown)                                                     |
-| `--content-file <path>`  | no       | Read page content from a file (`-` for stdin). Mutually exclusive with `-c` |
-| `--parent-page <pageId>` | no       | Parent page ID for nesting                                                  |
-| `--json`                 | no       | Force JSON output                                                           |
+| Flag                        | Required | Description                                                                 |
+| --------------------------- | -------- | --------------------------------------------------------------------------- |
+| `-c, --content`             | no       | Page content (markdown)                                                     |
+| `--content-file <path>`     | no       | Read page content from a file (`-` for stdin). Mutually exclusive with `-c` |
+| `--parent-page <pageId>`    | no       | Parent page ID for nesting                                                  |
+| `--sub-title <text>`        | no       | Page subtitle                                                               |
+| `--content-format <format>` | no       | `md` (default) or `plain`; needs content                                    |
+| `--json`                    | no       | Force JSON output                                                           |
 
 ### `cup doc-page-edit <docId> <pageId>`
 
-Edit a doc page name or content. Provide at least `--name`, `--content`, or `--content-file`.
+Edit a doc page name, subtitle or content. Provide at least `--name`, `--sub-title`, `--content`, or `--content-file`. Content replaces the page body unless `--mode append` or `--mode prepend` is given.
 
 ```bash
 cup doc-page-edit abc123 page456 --name "Renamed Section"
 cup doc-page-edit abc123 page456 -c "# Updated content"
 cup doc-page-edit abc123 page456 --content-file notes.md
 cup doc-page-edit abc123 page456 --name "New Name" -c "# New body"
+cup doc-page-edit abc123 page456 --mode append -c "## Update from today"
+cup doc-page-edit abc123 page456 --sub-title "Last reviewed in Q3"
 cup doc-page-edit abc123 page456 --name "Renamed" --json
 ```
 
-| Flag                    | Required     | Description                                                                     |
-| ----------------------- | ------------ | ------------------------------------------------------------------------------- |
-| `--name <text>`         | at least one | New page name                                                                   |
-| `-c, --content`         | at least one | New page content (markdown)                                                     |
-| `--content-file <path>` | at least one | Read new page content from a file (`-` for stdin). Mutually exclusive with `-c` |
-| `--json`                | no           | Force JSON output                                                               |
+| Flag                        | Required     | Description                                                                     |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------- |
+| `--name <text>`             | at least one | New page name                                                                   |
+| `--sub-title <text>`        | at least one | New page subtitle                                                               |
+| `-c, --content`             | at least one | New page content (markdown)                                                     |
+| `--content-file <path>`     | at least one | Read new page content from a file (`-` for stdin). Mutually exclusive with `-c` |
+| `--mode <mode>`             | no           | `replace` (default), `append` or `prepend`; needs content                       |
+| `--content-format <format>` | no           | `md` (default) or `plain`; needs content                                        |
+| `--json`                    | no           | Force JSON output                                                               |
 
 ### `cup tag-create <spaceId> <name>`
 
