@@ -498,6 +498,18 @@ describe('createTask with --template', () => {
     expect(mockCreateTaskFromTemplate).toHaveBeenCalledWith('l1', 't-100', 'From Template')
   })
 
+  it('rejects an ambiguous template name before creating', async () => {
+    mockGetTaskTemplates.mockResolvedValue([
+      { id: 't-100', name: 'Bug Report' },
+      { id: 't-200', name: 'bug report' },
+    ])
+    const { createTask } = await import('../../../src/commands/create.js')
+    await expect(
+      createTask(config, { list: 'l1', name: 'From Template', template: 'Bug Report' }),
+    ).rejects.toThrow('Template name "Bug Report" is ambiguous: t-100, t-200')
+    expect(mockCreateTaskFromTemplate).not.toHaveBeenCalled()
+  })
+
   it.each([
     [{ notifyAll: true }, '--notify-all cannot be combined with --template'],
     [{ checkRequiredFields: true }, '--check-required-fields cannot be combined with --template'],

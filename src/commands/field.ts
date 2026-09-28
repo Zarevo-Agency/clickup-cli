@@ -303,20 +303,12 @@ export function parseFieldBody(
   }
 }
 
-export function parseFieldValue(
-  field: FieldDescriptor,
-  rawValue: string,
-  opts: ParseFieldOptions = {},
-): unknown {
-  return parseFieldBody(field, rawValue, opts).value
-}
-
 /**
  * Build the value that adds or removes individual entries of a users, tasks
  * or labels field. Users and tasks use the API's {add}/{rem} form; labels have
  * no delta form, so the new label set is computed from the current value.
  */
-export function parseFieldDelta(
+function parseFieldDelta(
   field: FieldDescriptor,
   rawValue: string,
   mode: 'add' | 'rem',
