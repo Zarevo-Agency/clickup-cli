@@ -2259,7 +2259,7 @@ cup api POST /v2/list/901200300/task -d '{"name":"x"}' --dry-run
 | Pattern                                     | How pages are fetched                                                                  |
 | ------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `last_page` boolean plus an array field     | `page` is incremented (starting at the given `page`, default 0) until `last_page` true |
-| v3 `next_cursor`                            | `cursor=<next_cursor>` until the cursor is empty                                       |
+| v3 `next_cursor`                            | `cursor=<next_cursor>` until the cursor is empty or repeats, or a page is empty        |
 | Comment endpoints (`.../comment`, comments) | `start`/`start_id` of the oldest comment, de-duplicated by ID, until a short page      |
 
 `--max-pages <n>` (default 100) caps the number of requests and prints a warning on stderr when hit; the merged object keeps the last page's `last_page` / `next_cursor` so you can continue. When no pattern is found, the single response is printed with a warning.

@@ -218,6 +218,23 @@ describe('runApiCommand', () => {
     })
   })
 
+  it('prefers the v3 message over a generic error label', async () => {
+    const body = { status: 400, message: 'channel name is required', error: 'Bad Request' }
+    mockFetch.mockReturnValue(reply(400, body, 'Bad Request'))
+    const result = await runApiCommand(
+      config,
+      'POST',
+      '/v3/workspaces/{workspace_id}/chat/channels',
+      {
+        data: '{}',
+      },
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      error: { error: { status: 400, ecode: null, message: 'channel name is required' } },
+    })
+  })
+
   it('does not retry a failed write on 503', async () => {
     mockFetch.mockReturnValue(reply(503, 'upstream error', 'Service Unavailable'))
     const result = await runApiCommand(config, 'POST', '/v2/list/555001/task', { data: '{}' })
@@ -277,6 +294,20 @@ describe('runApiCommand', () => {
         ok: true,
         body: { docs: [{ id: 'd1' }, { id: 'd2' }], next_cursor: null },
       })
+    })
+
+    it('stops when the API returns the cursor it was just given', async () => {
+      mockFetch
+        .mockReturnValueOnce(reply(200, { data: [{ id: 'm1' }], next_cursor: 'cur_2' }))
+        .mockReturnValueOnce(reply(200, { data: [{ id: 'm2' }], next_cursor: 'cur_2' }))
+      const result = await runApiCommand(
+        config,
+        'GET',
+        '/v3/workspaces/{workspace_id}/chat/channels',
+        { paginate: true },
+      )
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      expect(result).toMatchObject({ ok: true, body: { data: [{ id: 'm1' }, { id: 'm2' }] } })
     })
 
     it('pages comments by start/start_id and drops the repeated cursor comment', async () => {

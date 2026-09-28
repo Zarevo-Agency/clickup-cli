@@ -258,7 +258,7 @@ function isSuccess(res: RawApiResponse): boolean {
 
 export function toApiError(res: RawApiResponse): ApiErrorOutput {
   const body = isRecord(res.body) ? res.body : {}
-  const raw = body.err ?? body.error ?? body.message
+  const raw = body.err ?? body.message ?? body.error
   const message =
     typeof raw === 'string'
       ? raw
@@ -335,6 +335,7 @@ async function paginate(
   let pageItems = items.length
   let added = items.length
   let pages = 1
+  let lastCursor: string | undefined
   const maxPages = request.maxPages ?? DEFAULT_MAX_PAGES
 
   for (;;) {
@@ -344,7 +345,9 @@ async function paginate(
       next.searchParams.set('page', String(mode.start + pages))
     } else if (mode.kind === 'cursor') {
       const cursor = current.next_cursor
-      if (typeof cursor !== 'string' || cursor === '') break
+      if (typeof cursor !== 'string' || cursor === '' || pageItems === 0) break
+      if (cursor === request.url.searchParams.get('cursor') || cursor === lastCursor) break
+      lastCursor = cursor
       next.searchParams.set('cursor', cursor)
     } else {
       if (pageItems < COMMENT_PAGE_SIZE || added === 0) break
