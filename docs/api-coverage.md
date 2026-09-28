@@ -97,16 +97,16 @@ Status: :white_check_mark: implemented | :construction: planned | :no_entry_sign
 
 ## Time Tracking
 
-| Feature           | Command                                         | Status             |
-| ----------------- | ----------------------------------------------- | ------------------ |
-| Start timer       | `cup time start <id>`                           | :white_check_mark: |
-| Stop timer        | `cup time stop`                                 | :white_check_mark: |
-| Timer status      | `cup time status`                               | :white_check_mark: |
-| Log time entry    | `cup time log <id> <duration>`                  | :white_check_mark: |
-| List entries      | `cup time list`                                 | :white_check_mark: |
-| Update entry      | `cup time update <id>`                          | :white_check_mark: |
-| Delete entry      | `cup time delete <id>`                          | :white_check_mark: |
-| Per-user estimate | `cup time estimate-by-user <id> <userId> <dur>` | :white_check_mark: |
+| Feature                                                  | Command                                         | Status             |
+| -------------------------------------------------------- | ----------------------------------------------- | ------------------ |
+| Start timer (billable, tags)                             | `cup time start <id>`                           | :white_check_mark: |
+| Stop timer                                               | `cup time stop`                                 | :white_check_mark: |
+| Timer status                                             | `cup time status`                               | :white_check_mark: |
+| Log time entry (start, assignee, billable, tags)         | `cup time log <id> <duration>`                  | :white_check_mark: |
+| List entries (date range, billable, location, assignee)  | `cup time list`                                 | :white_check_mark: |
+| Update entry (start/end, duration, task, billable, tags) | `cup time update <id>`                          | :white_check_mark: |
+| Delete entry                                             | `cup time delete <id>`                          | :white_check_mark: |
+| Per-user estimate                                        | `cup time estimate-by-user <id> <userId> <dur>` | :white_check_mark: |
 
 ## Workspace
 

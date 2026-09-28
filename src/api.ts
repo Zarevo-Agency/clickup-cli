@@ -246,6 +246,36 @@ export interface TimeEntry {
   at: number
 }
 
+export interface TimeEntryTag {
+  name: string
+  tag_fg?: string
+  tag_bg?: string
+}
+
+export interface TimeEntryFilters {
+  startDate?: number
+  endDate?: number
+  taskId?: string
+  spaceId?: string
+  folderId?: string
+  listId?: string
+  assigneeId?: string
+  isBillable?: boolean
+  includeTaskTags?: boolean
+  includeLocationNames?: boolean
+}
+
+export interface TimeEntryUpdate {
+  description?: string
+  duration?: number
+  start?: number
+  end?: number
+  tid?: string
+  billable?: boolean
+  tags?: TimeEntryTag[]
+  tag_action?: 'add' | 'remove'
+}
+
 export interface TimeInStatusEntry {
   status: string
   color: string
@@ -1266,13 +1296,20 @@ export class ClickUpClient {
     )
   }
 
-  async startTimeEntry(teamId: string, taskId: string, description?: string): Promise<TimeEntry> {
+  async startTimeEntry(
+    teamId: string,
+    taskId: string,
+    description?: string,
+    opts?: { billable?: boolean; tags?: TimeEntryTag[] },
+  ): Promise<TimeEntry> {
     const body: Record<string, unknown> = {
-      tid: taskId,
+      tid: normalizeTaskId(taskId),
       start: Date.now(),
       duration: -1,
     }
     if (description) body.description = description
+    if (opts?.billable !== undefined) body.billable = opts.billable
+    if (opts?.tags?.length) body.tags = opts.tags
     const data = await this.request<{ data: TimeEntry }>(
       `/team/${teamId}/time_entries/start${this.customIdQueryParams(taskId)}`,
       {
@@ -1301,15 +1338,24 @@ export class ClickUpClient {
     teamId: string,
     taskId: string,
     duration: number,
-    opts?: { description?: string; start?: number },
+    opts?: {
+      description?: string
+      start?: number
+      billable?: boolean
+      tags?: TimeEntryTag[]
+      assignee?: number
+    },
   ): Promise<TimeEntry> {
     const start = opts?.start ?? Date.now() - duration
     const body: Record<string, unknown> = {
-      tid: taskId,
+      tid: normalizeTaskId(taskId),
       start,
       duration,
     }
     if (opts?.description) body.description = opts.description
+    if (opts?.billable !== undefined) body.billable = opts.billable
+    if (opts?.tags?.length) body.tags = opts.tags
+    if (opts?.assignee !== undefined) body.assignee = opts.assignee
     const data = await this.request<{ data: TimeEntry }>(
       `/team/${teamId}/time_entries${this.customIdQueryParams(taskId)}`,
       {
@@ -1320,43 +1366,52 @@ export class ClickUpClient {
     return data.data
   }
 
-  async getTimeEntries(
-    teamId: string,
-    opts?: {
-      startDate?: number
-      endDate?: number
-      taskId?: string
-      spaceId?: string
-      listId?: string
-      assigneeId?: string
-    },
-  ): Promise<TimeEntry[]> {
+  async getTimeEntries(teamId: string, opts?: TimeEntryFilters): Promise<TimeEntry[]> {
     const params = new URLSearchParams()
     if (opts?.startDate != null) params.set('start_date', String(opts.startDate))
     if (opts?.endDate != null) params.set('end_date', String(opts.endDate))
     if (opts?.spaceId) params.set('space_id', opts.spaceId)
+    if (opts?.folderId) params.set('folder_id', opts.folderId)
     if (opts?.listId) params.set('list_id', opts.listId)
+    if (opts?.taskId) {
+      const taskId = normalizeTaskId(opts.taskId)
+      params.set('task_id', taskId)
+      if (isCustomTaskId(taskId)) {
+        params.set('custom_task_ids', 'true')
+        params.set('team_id', teamId)
+      }
+    }
     if (opts?.assigneeId) params.set('assignee', opts.assigneeId)
+    if (opts?.isBillable !== undefined) params.set('is_billable', String(opts.isBillable))
+    if (opts?.includeTaskTags) params.set('include_task_tags', 'true')
+    if (opts?.includeLocationNames) params.set('include_location_names', 'true')
     const query = params.toString()
     const url = `/team/${teamId}/time_entries${query ? `?${query}` : ''}`
     const data = await this.request<{ data: TimeEntry[] }>(url)
-    const entries = readCollectionField<TimeEntry>(data, 'data', 'time entries')
-    if (opts?.taskId) {
-      return entries.filter(e => e.task?.id === opts.taskId)
-    }
-    return entries
+    return readCollectionField<TimeEntry>(data, 'data', 'time entries')
   }
 
   async updateTimeEntry(
     teamId: string,
     timeEntryId: string,
-    updates: { description?: string; duration?: number; tags?: string[] },
+    updates: TimeEntryUpdate,
   ): Promise<TimeEntry> {
+    const body = updates.tid ? { ...updates, tid: normalizeTaskId(updates.tid) } : updates
+    const query = updates.tid ? this.customIdQueryParams(updates.tid) : ''
     const data = await this.request<{ data: TimeEntry }>(
-      `/team/${teamId}/time_entries/${timeEntryId}`,
-      { method: 'PUT', body: JSON.stringify(updates) },
+      `/team/${teamId}/time_entries/${timeEntryId}${query}`,
+      { method: 'PUT', body: JSON.stringify(body) },
     )
     return data.data
+  }
+
+  async getTimeEntryTags(
+    teamId: string,
+  ): Promise<Array<{ name: string; tag_fg: string; tag_bg: string }>> {
+    const data = await this.request<{
+      data: Array<{ name: string; tag_fg: string; tag_bg: string }>
+    }>(`/team/${teamId}/time_entries/tags`)
+    return readCollectionField(data, 'data', 'time entry tags')
   }
 
   async getSpaceTags(

@@ -151,6 +151,7 @@ import {
   formatTimeEntry,
   formatTimeEntryMarkdown,
   formatTimeEntriesMarkdown,
+  resolveBillable,
 } from './commands/time.js'
 import {
   listSpaceTags,
@@ -1967,18 +1968,35 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
     .command('start <taskId>')
     .description('Start tracking time on a task')
     .option('-d, --description <text>', 'Description for the time entry')
+    .option('--billable', 'Mark the time entry as billable')
+    .option('--not-billable', 'Mark the time entry as not billable')
+    .option('--tag <name>', 'Time entry tag (repeatable)', collect, [])
     .option('--json', 'Force JSON output even in terminal')
     .action(
-      wrapAction(async (taskId: string, opts: { description?: string; json?: boolean }) => {
-        const config = loadConfig(getProfileName())
-        const result = await startTimer(config, taskId, opts.description)
-        if (shouldOutputJson(opts.json ?? false)) {
-          console.log(JSON.stringify(result, null, 2))
-        } else {
-          const taskName = result.task?.name ?? taskId
-          console.log(`Started timer on "${taskName}"`)
-        }
-      }),
+      wrapAction(
+        async (
+          taskId: string,
+          opts: {
+            description?: string
+            billable?: boolean
+            notBillable?: boolean
+            tag: string[]
+            json?: boolean
+          },
+        ) => {
+          const config = loadConfig(getProfileName())
+          const result = await startTimer(config, taskId, opts.description, {
+            billable: resolveBillable(opts),
+            tags: opts.tag,
+          })
+          if (shouldOutputJson(opts.json ?? false)) {
+            console.log(JSON.stringify(result, null, 2))
+          } else {
+            const taskName = result.task?.name ?? taskId
+            console.log(`Started timer on "${taskName}"`)
+          }
+        },
+      ),
     )
 
   timeCmd
@@ -2023,16 +2041,37 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
     .command('log <taskId> <duration>')
     .description('Log a manual time entry (e.g. "2h", "30m", "1h30m")')
     .option('-d, --description <text>', 'Description for the time entry')
+    .option(
+      '--start <datetime>',
+      'Start time (YYYY-MM-DDTHH:MM in your timezone, or ISO 8601; default: now minus duration)',
+    )
+    .option('--assignee <userId>', 'Log the entry for another user (user ID or "me")')
+    .option('--billable', 'Mark the time entry as billable')
+    .option('--not-billable', 'Mark the time entry as not billable')
+    .option('--tag <name>', 'Time entry tag (repeatable)', collect, [])
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
         async (
           taskId: string,
           duration: string,
-          opts: { description?: string; json?: boolean },
+          opts: {
+            description?: string
+            start?: string
+            assignee?: string
+            billable?: boolean
+            notBillable?: boolean
+            tag: string[]
+            json?: boolean
+          },
         ) => {
           const config = loadConfig(getProfileName())
-          const result = await logTime(config, taskId, duration, opts.description)
+          const result = await logTime(config, taskId, duration, opts.description, {
+            start: opts.start,
+            assignee: opts.assignee,
+            billable: resolveBillable(opts),
+            tags: opts.tag,
+          })
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(result, null, 2))
           } else {
@@ -2045,36 +2084,56 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
   timeCmd
     .command('list')
     .description('List my recent time entries (use --all for team entries)')
-    .option('--days <n>', 'Number of days to look back', '7')
+    .option('--days <n>', 'Number of days to look back (default: 7)')
+    .option('--start <date>', 'Range start (YYYY-MM-DD or YYYY-MM-DDTHH:MM, your timezone)')
+    .option('--end <date>', 'Range end (date-only includes the whole day; default: now)')
     .option('--task <taskId>', 'Filter by task ID')
     .option('--space <spaceId>', 'Filter by space ID')
+    .option('--folder <folderId>', 'Filter by folder ID')
     .option('--list <listId>', 'Filter by list ID')
-    .option('--assignee <userId>', 'Filter by assignee user ID')
+    .option('--assignee <userId>', 'Filter by assignee user ID(s), comma-separated, or "me"')
     .option('--all', 'Show all team entries (default: only mine)')
+    .option('--billable', 'Only billable entries')
+    .option('--not-billable', 'Only non-billable entries')
+    .option('--include-task-tags', 'Include task tags (task_tags)')
+    .option('--include-location-names', 'Include list, folder and space names (task_location)')
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
         async (opts: {
           days?: string
+          start?: string
+          end?: string
           task?: string
           space?: string
+          folder?: string
           list?: string
           assignee?: string
           all?: boolean
+          billable?: boolean
+          notBillable?: boolean
+          includeTaskTags?: boolean
+          includeLocationNames?: boolean
           json?: boolean
         }) => {
           const config = loadConfig(getProfileName())
-          const days = opts.days ? Number(opts.days) : 7
-          if (!Number.isFinite(days) || days <= 0) {
+          const days = opts.days !== undefined ? Number(opts.days) : undefined
+          if (days !== undefined && (!Number.isFinite(days) || days <= 0)) {
             throw new Error('--days must be a positive number')
           }
           const entries = await listTimeEntries(config, {
             days,
+            start: opts.start,
+            end: opts.end,
             taskId: opts.task,
             spaceId: opts.space,
+            folderId: opts.folder,
             listId: opts.list,
             assigneeId: opts.assignee,
             all: opts.all,
+            billable: resolveBillable(opts),
+            includeTaskTags: opts.includeTaskTags,
+            includeLocationNames: opts.includeLocationNames,
           })
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(entries, null, 2))
@@ -2092,17 +2151,41 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
     .description('Update a time entry')
     .option('-d, --description <text>', 'New description')
     .option('--duration <duration>', 'New duration (e.g. "2h", "30m")')
+    .option('--start <datetime>', 'New start time (with --end or --duration; your timezone)')
+    .option('--end <datetime>', 'New end time (with --start or --duration; your timezone)')
+    .option('--task <taskId>', 'Move the entry to another task')
+    .option('--billable', 'Mark the time entry as billable')
+    .option('--not-billable', 'Mark the time entry as not billable')
+    .option('--tag-add <name>', 'Add a tag (repeatable)', collect, [])
+    .option('--tag-remove <name>', 'Remove a tag (repeatable)', collect, [])
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
         async (
           timeEntryId: string,
-          opts: { description?: string; duration?: string; json?: boolean },
+          opts: {
+            description?: string
+            duration?: string
+            start?: string
+            end?: string
+            task?: string
+            billable?: boolean
+            notBillable?: boolean
+            tagAdd: string[]
+            tagRemove: string[]
+            json?: boolean
+          },
         ) => {
           const config = loadConfig(getProfileName())
           const entry = await updateTimeEntry(config, timeEntryId, {
             description: opts.description,
             duration: opts.duration,
+            start: opts.start,
+            end: opts.end,
+            taskId: opts.task,
+            billable: resolveBillable(opts),
+            tagAdd: opts.tagAdd,
+            tagRemove: opts.tagRemove,
           })
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(entry, null, 2))
