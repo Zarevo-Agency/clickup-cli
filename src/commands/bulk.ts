@@ -1,7 +1,7 @@
 import { ClickUpClient } from '../api.js'
 import type { Config } from '../config.js'
 import { runInBatches, type BatchOutcome } from '../util/batch.js'
-import { resolveAssigneeId, parseDueDate, parsePriority } from './update.js'
+import { isClearValue, resolveAssigneeId, parseDueDate, parsePriority } from './update.js'
 import { applyFieldEntry, findFieldByName, parseFieldBody, resolveTaskFieldValue } from './field.js'
 
 export type BulkResult = { updated: number; failed: Array<{ id: string; reason: string }> }
@@ -52,12 +52,11 @@ export async function bulkDueDate(
   taskIds: string[],
 ): Promise<BulkResult> {
   const client = new ClickUpClient(config)
-  const timezone = await client.getUserTimezone()
   let payload: { due_date: number | null; due_date_time?: boolean }
-  if (date === 'none' || date === 'clear') {
+  if (isClearValue(date)) {
     payload = { due_date: null }
   } else {
-    const parsed = parseDueDate(date, timezone)
+    const parsed = parseDueDate(date, await client.getUserTimezone())
     payload = { due_date: parsed.ms, due_date_time: parsed.hasTime }
   }
   const outcomes = await runInBatches(taskIds, BULK_CONCURRENCY, id =>

@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 import { API_ORIGIN, ClickUpClient } from '../api.js'
 import type { RawApiResponse } from '../api.js'
 import type { Config } from '../config.js'
+import { ClickUpApiError } from '../errors.js'
 import { isTTY } from '../output.js'
 import { resolveTextInput } from '../text-input.js'
 import { isRecord } from '../util/guards.js'
@@ -258,16 +259,10 @@ function isSuccess(res: RawApiResponse): boolean {
 }
 
 export function toApiError(res: RawApiResponse): ApiErrorOutput {
-  const body = isRecord(res.body) ? res.body : {}
-  const raw = body.err ?? body.message ?? body.error
-  const message =
-    typeof raw === 'string'
-      ? raw
-      : raw !== undefined
-        ? JSON.stringify(raw)
-        : res.statusText || `HTTP ${res.status}`
-  const ecode = typeof body.ECODE === 'string' ? body.ECODE : null
-  return { error: { message, status: res.status, ecode, body: res.body } }
+  const err = ClickUpApiError.fromBody(res.status, res.body, res.statusText || `HTTP ${res.status}`)
+  return {
+    error: { message: err.apiMessage, status: res.status, ecode: err.ecode, body: res.body },
+  }
 }
 
 async function confirmDelete(url: URL): Promise<void> {

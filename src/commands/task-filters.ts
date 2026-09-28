@@ -1,7 +1,7 @@
 import { Option } from 'commander'
 import type { Command } from 'commander'
 import type { ClickUpClient, CustomFieldDefinition, TaskFilters } from '../api.js'
-import { parseDueDate, resolveAssigneeId } from './update.js'
+import { parseDueDate, resolveAssigneeId, splitCommaList, UUID_RE } from './update.js'
 
 export const ORDER_BY_FIELDS = ['id', 'created', 'updated', 'due_date'] as const
 
@@ -32,7 +32,6 @@ const OPERATOR_WORDS = [...WHERE_OPERATORS]
   .map(operator => ({ operator, words: operator.split(' ') }))
   .sort((a, b) => b.words.length - a.words.length)
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NUMERIC_ID_RE = /^\d+$/
 
 export interface TaskFilterFlags {
@@ -163,19 +162,9 @@ export function addTaskFilterOptions(command: Command): Command {
 }
 
 function splitIds(values: string[], flag: string): string[] {
-  const ids = values
-    .flatMap(v => v.split(','))
-    .map(v => v.trim())
-    .filter(v => v.length > 0)
+  const ids = splitCommaList(values)
   if (ids.length === 0) throw new Error(`${flag} requires at least one value`)
   return ids
-}
-
-function splitList(value: string): string[] {
-  return value
-    .split(',')
-    .map(v => v.trim())
-    .filter(v => v.length > 0)
 }
 
 /** RANGE bounds: "a,b" or "a b". */
@@ -226,7 +215,7 @@ function buildClause(
   if (operator === 'RANGE' && splitRange(value).length !== 2) {
     throw new Error(`--where "${expr}": RANGE needs two values, e.g. 1,10 or 1 10`)
   }
-  if (LIST_OPERATORS.has(operator) && splitList(value).length === 0) {
+  if (LIST_OPERATORS.has(operator) && splitCommaList(value).length === 0) {
     throw new Error(`--where "${expr}": ${operator} needs comma-separated values`)
   }
   return { field, operator, value }
@@ -341,7 +330,7 @@ export function toCustomFieldFilter(
     return { field_id: fieldId, operator, value: splitRange(raw).map(convert) }
   }
   if (LIST_OPERATORS.has(operator)) {
-    return { field_id: fieldId, operator, value: splitList(raw).map(convert) }
+    return { field_id: fieldId, operator, value: splitCommaList(raw).map(convert) }
   }
   return { field_id: fieldId, operator, value: convert(raw) }
 }

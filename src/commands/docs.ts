@@ -4,6 +4,7 @@ import type { Doc } from '../api.js'
 import { formatTable } from '../output.js'
 import type { Column } from '../output.js'
 import { parseDocParentType } from './doc.js'
+import { resolveAssigneeId } from './update.js'
 
 interface DocRow {
   name: string
@@ -23,12 +24,6 @@ export interface DocListFilters {
   deleted?: boolean
 }
 
-async function resolveCreatorId(client: ClickUpClient, value: string): Promise<number> {
-  if (value === 'me') return (await client.getMe()).id
-  if (!/^\d+$/.test(value)) throw new Error('--creator must be a numeric user ID or "me"')
-  return Number(value)
-}
-
 export async function listDocs(
   config: Config,
   query?: string,
@@ -38,7 +33,9 @@ export async function listDocs(
     filters.parentType === undefined ? undefined : parseDocParentType(filters.parentType)
   const client = new ClickUpClient(config)
   const creator =
-    filters.creator === undefined ? undefined : await resolveCreatorId(client, filters.creator)
+    filters.creator === undefined
+      ? undefined
+      : await resolveAssigneeId(client, filters.creator, '--creator')
   const docs = await client.getAllDocs(config.teamId, {
     archived: filters.archived,
     deleted: filters.deleted,

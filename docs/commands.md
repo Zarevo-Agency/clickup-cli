@@ -990,7 +990,7 @@ In TTY mode without `--confirm`: shows the space name and prompts for confirmati
 
 ### `cup field <id>`
 
-Set or remove a custom field value. Fields are selected by UUID or by name (case-insensitive); errors list available fields/options. All inputs are validated before the first write.
+Set or remove a custom field value. Fields are selected by UUID or by name (case-insensitive; a name shared by several fields must be given as UUID); errors list available fields/options. All inputs are validated before the first write.
 
 ```bash
 cup field abc123 --set "Priority Level" high

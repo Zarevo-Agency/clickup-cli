@@ -56,11 +56,13 @@ export async function createGoal(
   opts?: { description?: string; dueDate?: string; color?: string },
 ): Promise<Goal> {
   const client = new ClickUpClient(config)
-  const timezone = await client.getUserTimezone()
+  const dueDate = opts?.dueDate
+    ? parseDueDate(opts.dueDate, await client.getUserTimezone()).ms
+    : undefined
   return client.createGoal(config.teamId, name, {
     description: opts?.description,
     color: opts?.color,
-    ...(opts?.dueDate ? { dueDate: parseDueDate(opts.dueDate, timezone).ms } : {}),
+    ...(dueDate !== undefined ? { dueDate } : {}),
   })
 }
 

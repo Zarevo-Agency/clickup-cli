@@ -28,7 +28,7 @@ import {
   isClearValue,
   resolveGroupId,
   resolveUserIds,
-  splitIdList,
+  splitCommaList,
 } from './commands/update.js'
 import type { UpdateCommandOptions } from './commands/update.js'
 import { createTask } from './commands/create.js'
@@ -315,13 +315,6 @@ function parseOptionalNumberOption(value: string, optionName: string): number {
   return parsed
 }
 
-function splitCommaList(value: string): string[] {
-  return value
-    .split(',')
-    .map(v => v.trim())
-    .filter(v => v.length > 0)
-}
-
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value]
 }
@@ -588,8 +581,8 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           opts.removeAssignee = await resolveUserIds(client, opts.removeAssignee)
           opts.watcher = await resolveUserIds(client, opts.watcher)
           opts.removeWatcher = await resolveUserIds(client, opts.removeWatcher)
-          const groupAddRaw = (opts.groupAssignee ?? []).flatMap(splitCommaList)
-          const groupRemRaw = (opts.removeGroupAssignee ?? []).flatMap(splitCommaList)
+          const groupAddRaw = splitCommaList(opts.groupAssignee)
+          const groupRemRaw = splitCommaList(opts.removeGroupAssignee)
           if (groupAddRaw.length > 0 || groupRemRaw.length > 0) {
             const resolveGroup = createCachedGroupResolver(client)
             opts.groupAssigneeIds = []
@@ -703,7 +696,7 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           if (opts.list === 'sprint:current') {
             opts.list = await resolveActiveSprintListId(config)
           }
-          if (splitIdList(opts.assignee).includes('me')) {
+          if (splitCommaList(opts.assignee).includes('me')) {
             const client = new ClickUpClient(config)
             opts.assignee = await resolveUserIds(client, opts.assignee)
           }

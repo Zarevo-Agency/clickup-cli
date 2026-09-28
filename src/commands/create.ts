@@ -9,7 +9,7 @@ import {
   parsePoints,
   parseTimeEstimate,
   resolveListStatus,
-  splitIdList,
+  splitCommaList,
 } from './update.js'
 
 export interface CreateOptions {
@@ -85,7 +85,7 @@ function buildCreatePayload(
     payload.start_date = parsed.ms
     payload.start_date_time = parsed.hasTime
   }
-  const assignees = splitIdList(options.assignee).map(id => parseAssigneeId(id))
+  const assignees = splitCommaList(options.assignee).map(id => parseAssigneeId(id))
   if (assignees.length > 0) {
     payload.assignees = assignees
   }

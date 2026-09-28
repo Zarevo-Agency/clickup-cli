@@ -15,10 +15,13 @@ export class ClickUpApiError extends Error {
     this.apiMessage = apiMessage
   }
 
-  /** Reads `err`/`error` and `ECODE` from an error response body; `fallback` is used when the body has no message. */
+  /**
+   * Reads the message (v2 `err`, v3 `message`, then the generic `error` label) and `ECODE`
+   * from an error response body; `fallback` is used when the body has no message.
+   */
   static fromBody(status: number, body: unknown, fallback: string): ClickUpApiError {
     const data = isRecord(body) ? body : {}
-    const raw = data.err ?? data.error
+    const raw = data.err ?? data.message ?? data.error
     const message = typeof raw === 'string' ? raw : raw == null ? '' : JSON.stringify(raw)
     const ecode = typeof data.ECODE === 'string' && data.ECODE ? data.ECODE : null
     return new ClickUpApiError(status, message || fallback, ecode)

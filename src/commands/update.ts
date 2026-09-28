@@ -30,7 +30,7 @@ const ISO_WITH_OFFSET_RE =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/
 
 /** Rejects dates that do not exist (month 13, February 30), which Date would roll over. */
-function assertCalendarDate(value: string): void {
+export function assertCalendarDate(value: string): void {
   const match = DATE_PREFIX_RE.exec(value)
   if (!match) return
   const year = Number(match[1])
@@ -145,16 +145,20 @@ export function parseAssigneeId(value: string, label = 'Assignee'): number {
   return id
 }
 
-export async function resolveAssigneeId(client: ClickUpClient, value: string): Promise<number> {
+export async function resolveAssigneeId(
+  client: Pick<ClickUpClient, 'getMe'>,
+  value: string,
+  label = 'Assignee',
+): Promise<number> {
   if (value === 'me') {
     const user = await client.getMe()
     return user.id
   }
-  return parseAssigneeId(value)
+  return parseAssigneeId(value, label)
 }
 
 /** Flatten a repeatable, comma-separated flag value into trimmed, non-empty, unique entries. */
-export function splitIdList(value: string | readonly string[] | undefined): string[] {
+export function splitCommaList(value: string | readonly string[] | undefined): string[] {
   if (value === undefined) return []
   const values = typeof value === 'string' ? [value] : value
   const ids = values
@@ -170,13 +174,13 @@ export async function resolveUserIds(
   value: string | readonly string[] | undefined,
 ): Promise<string[]> {
   const ids: string[] = []
-  for (const id of splitIdList(value)) {
+  for (const id of splitCommaList(value)) {
     ids.push(id === 'me' ? String((await client.getMe()).id) : id)
   }
   return ids
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function resolveGroupId(client: ClickUpClient, value: string): Promise<string> {
   if (UUID_RE.test(value)) return value
@@ -312,8 +316,8 @@ function buildUserDelta(
   rem: string | readonly string[] | undefined,
   label: string,
 ): { add?: number[]; rem?: number[] } | undefined {
-  const addIds = splitIdList(add).map(id => parseAssigneeId(id, label))
-  const remIds = splitIdList(rem).map(id => parseAssigneeId(id, label))
+  const addIds = splitCommaList(add).map(id => parseAssigneeId(id, label))
+  const remIds = splitCommaList(rem).map(id => parseAssigneeId(id, label))
   if (addIds.length === 0 && remIds.length === 0) return undefined
   return {
     ...(addIds.length > 0 ? { add: addIds } : {}),

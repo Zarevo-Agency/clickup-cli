@@ -1,7 +1,7 @@
 import { ClickUpClient } from '../api.js'
 import type { Task, UpdateTaskOptions, UserGroup } from '../api.js'
 import type { Config } from '../config.js'
-import { resolveAssigneeId, resolveGroupId } from './update.js'
+import { resolveAssigneeId, resolveGroupId, splitCommaList } from './update.js'
 
 interface AssignOptions {
   to?: string
@@ -9,13 +9,6 @@ interface AssignOptions {
   group?: string
   removeGroup?: string
   json?: boolean
-}
-
-function parseIdList(value: string): string[] {
-  return value
-    .split(',')
-    .map(v => v.trim())
-    .filter(v => v.length > 0)
 }
 
 function createGroupCache(client: ClickUpClient): (value: string) => Promise<string> {
@@ -47,22 +40,22 @@ export async function assignTask(
   const groupRem: string[] = []
 
   if (opts.to) {
-    for (const value of parseIdList(opts.to)) {
+    for (const value of splitCommaList(opts.to)) {
       add.push(await resolveAssigneeId(client, value))
     }
   }
   if (opts.remove) {
-    for (const value of parseIdList(opts.remove)) {
+    for (const value of splitCommaList(opts.remove)) {
       rem.push(await resolveAssigneeId(client, value))
     }
   }
   if (opts.group) {
-    for (const value of parseIdList(opts.group)) {
+    for (const value of splitCommaList(opts.group)) {
       groupAdd.push(await resolveGroup(value))
     }
   }
   if (opts.removeGroup) {
-    for (const value of parseIdList(opts.removeGroup)) {
+    for (const value of splitCommaList(opts.removeGroup)) {
       groupRem.push(await resolveGroup(value))
     }
   }

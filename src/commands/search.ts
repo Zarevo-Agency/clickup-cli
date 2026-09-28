@@ -1,20 +1,8 @@
-import { ClickUpClient } from '../api.js'
-import type { TaskFilters } from '../api.js'
+import type { ClickUpClient, TaskFilters } from '../api.js'
 import type { Config } from '../config.js'
 import { matchStatus } from '../status.js'
 import type { TaskRecords, TaskSummary } from './tasks.js'
 import { summarize, fetchTaskRecords } from './tasks.js'
-import { matchNamedItem } from './task-filters.js'
-
-export async function resolveSpaceNameToId(config: Config, value: string): Promise<string> {
-  if (/^\d+$/.test(value)) {
-    return value
-  }
-
-  const client = new ClickUpClient(config)
-  const spaces = await client.getSpaces(config.teamId)
-  return matchNamedItem(spaces, value, 'space').id
-}
 
 export interface SearchOptions extends Omit<TaskFilters, 'statuses'> {
   /** Fuzzy-matched client-side against the statuses of the fetched tasks. */

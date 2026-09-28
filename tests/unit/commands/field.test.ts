@@ -197,6 +197,24 @@ describe('setCustomField', () => {
     )
   })
 
+  it('rejects a name shared by several fields instead of picking one', async () => {
+    const { findFieldByName } = await import('../../../src/commands/field.js')
+    const fields = [
+      { id: 'f1', name: 'Stage', type: 'text' },
+      { id: 'f2', name: 'stage', type: 'drop_down' },
+    ]
+    expect(() => findFieldByName(fields, 'Stage')).toThrow('Field "Stage" is ambiguous')
+    expect(findFieldByName(fields, 'f2').id).toBe('f2')
+  })
+
+  it('rejects impossible calendar dates instead of rolling them over', async () => {
+    const { setCustomField } = await import('../../../src/commands/field.js')
+    await expect(
+      setCustomField(config, 'task1', { set: ['Target Date', '2026-02-30'] }),
+    ).rejects.toThrow('no such calendar date: 2026-02-30')
+    expect(mockSetCustomFieldValue).not.toHaveBeenCalled()
+  })
+
   it('matches field name case-insensitively', async () => {
     const { setCustomField } = await import('../../../src/commands/field.js')
     await setCustomField(config, 'task1', { set: ['notes', 'lowercase match'] })

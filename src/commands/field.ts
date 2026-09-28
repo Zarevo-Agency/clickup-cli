@@ -2,7 +2,7 @@ import { ClickUpClient } from '../api.js'
 import type { CustomFieldValueOptions } from '../api.js'
 import type { Config } from '../config.js'
 import { isRecord } from '../util/guards.js'
-import { parseDueDate } from './update.js'
+import { assertCalendarDate, parseDueDate, splitCommaList } from './update.js'
 import type { ParsedDate } from './update.js'
 
 export interface FieldDescriptor {
@@ -103,12 +103,17 @@ function attachmentFieldError(field: FieldDescriptor): Error {
   )
 }
 
-/** Find a custom field by its UUID or by case-insensitive name. */
+/** Find a custom field by its UUID or by case-insensitive name; a name shared by several fields is an error. */
 export function findFieldByName<T extends FieldDescriptor>(fields: readonly T[], name: string): T {
   const byId = fields.find(f => f.id === name)
   if (byId) return byId
   const lower = name.toLowerCase()
-  const match = fields.find(f => f.name.toLowerCase() === lower)
+  const matches = fields.filter(f => f.name.toLowerCase() === lower)
+  if (matches.length > 1) {
+    const list = matches.map(f => `  - "${f.name}" (${f.id}, ${f.type})`).join('\n')
+    throw new Error(`Field "${name}" is ambiguous:\n${list}\nUse the field ID instead.`)
+  }
+  const match = matches[0]
   if (!match) {
     const available = fields.map(f => f.name).join(', ') || '(none)'
     throw new Error(`Field "${name}" not found. Available fields: ${available}`)
@@ -116,21 +121,14 @@ export function findFieldByName<T extends FieldDescriptor>(fields: readonly T[],
   return match
 }
 
-function splitList(rawValue: string): string[] {
-  return rawValue
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-}
-
 function parseTaskIds(rawValue: string): string[] {
-  const ids = splitList(rawValue)
+  const ids = splitCommaList(rawValue)
   if (ids.length === 0) throw new Error('Provide at least one task ID (comma-separated)')
   return ids
 }
 
 function parseUserIds(rawValue: string): Array<number | 'me'> {
-  const ids = splitList(rawValue)
+  const ids = splitCommaList(rawValue)
   if (ids.length === 0) throw new Error('Provide at least one user ID (comma-separated)')
   return ids.map(id => {
     if (id === 'me') return 'me'
@@ -143,7 +141,7 @@ function parseUserIds(rawValue: string): Array<number | 'me'> {
 function resolveLabelIds(field: FieldDescriptor, rawValue: string): string[] {
   const options = field.type_config?.options
   if (!options?.length) throw new Error('Labels field has no configured options')
-  const names = splitList(rawValue)
+  const names = splitCommaList(rawValue)
   if (names.length === 0) throw new Error('Provide at least one label name (comma-separated)')
   return names.map(name => {
     const lower = name.toLowerCase()
@@ -166,6 +164,7 @@ function currentLabelIds(value: unknown): string[] {
 }
 
 function parseDateField(rawValue: string, timezone?: string): FieldValueBody {
+  assertCalendarDate(rawValue)
   let parsed: ParsedDate
   try {
     parsed = parseDueDate(rawValue, timezone)

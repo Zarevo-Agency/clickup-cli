@@ -1,5 +1,6 @@
 import { ClickUpClient } from '../api.js'
 import type { Config } from '../config.js'
+import { splitCommaList } from './update.js'
 
 interface TagOptions {
   add?: string
@@ -10,13 +11,6 @@ interface TagResult {
   taskId: string
   added: string[]
   removed: string[]
-}
-
-function parseTags(input: string): string[] {
-  return input
-    .split(',')
-    .map(t => t.trim())
-    .filter(t => t.length > 0)
 }
 
 export async function manageTags(
@@ -33,7 +27,7 @@ export async function manageTags(
   const removed: string[] = []
 
   if (opts.add) {
-    const tags = parseTags(opts.add)
+    const tags = splitCommaList(opts.add)
     for (const tag of tags) {
       await client.addTagToTask(taskId, tag)
       added.push(tag)
@@ -41,7 +35,7 @@ export async function manageTags(
   }
 
   if (opts.remove) {
-    const tags = parseTags(opts.remove)
+    const tags = splitCommaList(opts.remove)
     try {
       for (const tag of tags) {
         await client.removeTagFromTask(taskId, tag)

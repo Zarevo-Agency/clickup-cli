@@ -13,6 +13,15 @@ describe('ClickUpApiError.fromBody', () => {
     expect(err.message).toBe('ClickUp API error 400: Name is required [X_001]')
   })
 
+  it('prefers a v3 message over the generic error label', () => {
+    const err = ClickUpApiError.fromBody(
+      400,
+      { error: 'Bad Request', message: 'name missing' },
+      'x',
+    )
+    expect(err.apiMessage).toBe('name missing')
+  })
+
   it('falls back to the given message when the body only has an ECODE', () => {
     const err = ClickUpApiError.fromBody(401, { ECODE: 'OAUTH_025' }, 'Unauthorized')
     expect(err.message).toBe('ClickUp API error 401: Unauthorized [OAUTH_025]')
