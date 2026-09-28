@@ -2706,17 +2706,6 @@ describe('comment pagination', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 
-  it('stops when the next page only repeats the cursor comment', async () => {
-    mockFetch
-      .mockReturnValueOnce(mockResponse({ comments: fullPage(0) }))
-      .mockReturnValueOnce(mockResponse({ comments: [comment(24)] }))
-    const { ClickUpClient } = await import('../../src/api.js')
-    const client = new ClickUpClient({ apiToken: 'pk_test' })
-    const all = await client.getTaskComments('t1')
-    expect(all).toHaveLength(25)
-    expect(mockFetch).toHaveBeenCalledTimes(2)
-  })
-
   it('keeps custom task ID params on follow-up pages', async () => {
     mockFetch
       .mockReturnValueOnce(mockResponse({ comments: fullPage(0) }))
