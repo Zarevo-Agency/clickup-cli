@@ -675,7 +675,7 @@ List docs in your workspace, following pagination until every matching doc is re
 ```bash
 cup docs
 cup docs "design"
-cup docs --parent 90120000001 --parent-type folder   # docs in a folder
+cup docs --parent <folderId> --parent-type folder   # docs in a folder
 cup docs --creator me
 cup docs --archived --json
 ```
@@ -1484,7 +1484,7 @@ Create a new doc in your workspace, or inside a space, folder or list with `--pa
 ```bash
 cup doc-create "Architecture Notes"
 cup doc-create "Draft" -c "# Initial content"
-cup doc-create "Kickoff" --parent 90120000001 --parent-type folder
+cup doc-create "Kickoff" --parent <folderId> --parent-type folder
 cup doc-create "Private Notes" --visibility private
 cup doc-create "Handbook" --no-create-page
 cup doc-create "Plan" --json

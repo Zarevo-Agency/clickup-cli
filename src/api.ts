@@ -1535,7 +1535,7 @@ export class ClickUpClient {
     }
     if (content) body.content = content
     if (parentPageId) body.parent_page_id = parentPageId
-    if (options.subTitle) body.sub_title = options.subTitle
+    if (options.subTitle !== undefined) body.sub_title = options.subTitle
     return this.requestV3<DocPage>(`/workspaces/${workspaceId}/docs/${docId}/pages`, {
       method: 'POST',
       body: JSON.stringify(body),
