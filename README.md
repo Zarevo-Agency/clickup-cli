@@ -181,7 +181,7 @@ Full CRUD for the core ClickUp workflow:
 | 📄 **Docs**          | List, read, create, edit, delete (v3 API)                                                                                                                                                                     |
 | ⏱️ **Time Tracking** | Start/stop timer, log entries, list/update/delete history, per-user time estimates                                                                                                                            |
 | ☑️ **Checklists**    | View, create, delete, add/edit/delete items                                                                                                                                                                   |
-| 🔧 **Custom Fields** | List, create, set, remove values (text, number, dropdown, labels, date, checkbox, url, email, rating, progress, relationship, people)                                                                         |
+| 🔧 **Custom Fields** | List, create, set, remove values (text, number, dropdown, labels, date, checkbox, url, email, rating, progress, relationship, people), filter tasks by value                                                  |
 | 🏷️ **Tags**          | Add/remove on tasks, space-level create/update/delete                                                                                                                                                         |
 | 🎯 **Goals & OKRs**  | Goals CRUD, key results CRUD                                                                                                                                                                                  |
 | 🏃 **Sprints**       | Auto-detect active sprint, `sprint:current` pseudo-ID for move/create, flexible date parsing, config override, favorite sprint folders                                                                        |
@@ -271,7 +271,7 @@ export CU_TEAM_ID=YOUR_TEAM_ID
 
 **Sprint not detected** - Your sprint folder needs "sprint", "iteration", "cycle", or "scrum" in the name. Or pin it: `cup config set sprintFolderId <id>`. You can also favorite a sprint folder: `cup favorite add sprint-folder <id>`
 
-**Custom field filter fails** - `--field` requires `--list` to resolve field names to IDs: `cup tasks --list <id> --field "Sprint" "Week 1"`
+**Custom field filter says "Field not found"** - Without a scope only workspace-level fields are searched. Add `--list`, `--folder` or `--space`, or pass the field ID: `cup tasks --all --list <id> --where "Sprint = Week 1"`
 
 **Wrong workspace** - Switch profile: `cup profile use <name>` or use `-p <name>` for one command.
 

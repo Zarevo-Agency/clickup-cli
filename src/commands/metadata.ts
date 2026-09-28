@@ -53,6 +53,35 @@ export const exportSubcommands = [
   { name: 'all', description: 'Export the whole workspace', flags: exportFlags },
 ] as const satisfies readonly SubcommandMetadata[]
 
+/** Flags registered by `addTaskFilterOptions`, shared by `tasks` and `search` (same order). */
+const taskFilterFlags = [
+  '--status',
+  '--list',
+  '--space',
+  '--folder',
+  '--type',
+  '--all',
+  '--include-closed',
+  '--assignee',
+  '--tag',
+  '--due-before',
+  '--due-after',
+  '--created-after',
+  '--created-before',
+  '--updated-after',
+  '--updated-before',
+  '--done-after',
+  '--done-before',
+  '--parent',
+  '--no-subtasks',
+  '--where',
+  '--field',
+  '--order-by',
+  '--reverse',
+  '--full',
+  '--json',
+] as const
+
 export const commandMetadata = [
   {
     name: 'init',
@@ -77,23 +106,7 @@ export const commandMetadata = [
   {
     name: 'tasks',
     description: 'List tasks assigned to you by default. Use --all to search across all assignees.',
-    flags: [
-      '--status',
-      '--list',
-      '--space',
-      '--name',
-      '--type',
-      '--all',
-      '--include-closed',
-      '--assignee',
-      '--tag',
-      '--due-before',
-      '--due-after',
-      '--created-after',
-      '--created-before',
-      '--field',
-      '--json',
-    ],
+    flags: ['--name', ...taskFilterFlags],
     quickReference: [
       { section: 'read', usage: 'tasks', description: 'My tasks (--all for all assignees)' },
     ],
@@ -311,21 +324,7 @@ export const commandMetadata = [
     name: 'search',
     description:
       'Search tasks by name. Without a query, lists tasks filtered by flags. Defaults to your tasks; use --all for all assignees.',
-    flags: [
-      '--status',
-      '--list',
-      '--space',
-      '--all',
-      '--include-closed',
-      '--assignee',
-      '--tag',
-      '--due-before',
-      '--due-after',
-      '--created-after',
-      '--created-before',
-      '--field',
-      '--json',
-    ],
+    flags: taskFilterFlags,
     quickReference: [
       {
         section: 'read',

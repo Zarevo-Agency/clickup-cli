@@ -573,6 +573,72 @@ describe('getMyTasks', () => {
     expect(url).toContain('list_ids%5B%5D=list_abc')
   })
 
+  it('sends every filtered team tasks param, repeating array params', async () => {
+    mockFetch.mockReturnValueOnce(mockResponse({ tasks: [], last_page: true }))
+    await client.getMyTasks('team1', {
+      all: true,
+      statuses: ['to do', 'review'],
+      listIds: ['111', '222'],
+      spaceIds: ['333'],
+      folderIds: ['444', '555'],
+      customItems: [0, 1001],
+      tags: ['hot', 'vip'],
+      parent: 'abc123',
+      subtasks: false,
+      dateUpdatedGt: 1000,
+      dateDoneGt: 2000,
+      dateDoneLt: 3000,
+      orderBy: 'due_date',
+      reverse: true,
+      customFields: [{ field_id: 'f1', operator: '>', value: 5 }],
+    })
+    const params = new URL(String(mockFetch.mock.calls[0]![0])).searchParams
+    expect(params.getAll('statuses[]')).toEqual(['to do', 'review'])
+    expect(params.getAll('list_ids[]')).toEqual(['111', '222'])
+    expect(params.getAll('space_ids[]')).toEqual(['333'])
+    expect(params.getAll('project_ids[]')).toEqual(['444', '555'])
+    expect(params.getAll('custom_items[]')).toEqual(['0', '1001'])
+    expect(params.getAll('tags[]')).toEqual(['hot', 'vip'])
+    expect(params.get('parent')).toBe('abc123')
+    expect(params.get('subtasks')).toBe('false')
+    expect(params.get('date_updated_gt')).toBe('1000')
+    expect(params.get('date_done_gt')).toBe('2000')
+    expect(params.get('date_done_lt')).toBe('3000')
+    expect(params.get('order_by')).toBe('due_date')
+    expect(params.get('reverse')).toBe('true')
+    expect(JSON.parse(params.get('custom_fields')!)).toEqual([
+      { field_id: 'f1', operator: '>', value: 5 },
+    ])
+    expect(params.has('assignees[]')).toBe(false)
+  })
+
+  it('omits order and parent params by default', async () => {
+    mockFetch.mockReturnValueOnce(mockResponse({ tasks: [], last_page: true }))
+    await client.getMyTasks('team1', { all: true })
+    const params = new URL(String(mockFetch.mock.calls[0]![0])).searchParams
+    expect(params.get('subtasks')).toBe('true')
+    for (const key of ['order_by', 'reverse', 'parent', 'project_ids[]', 'custom_items[]']) {
+      expect(params.has(key)).toBe(false)
+    }
+  })
+
+  it('reads custom fields from the folder, space and workspace endpoints', async () => {
+    const fields = [{ id: 'f1', name: 'Stage', type: 'drop_down' }]
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ fields }))
+      .mockReturnValueOnce(mockResponse({ fields }))
+      .mockReturnValueOnce(mockResponse({ fields }))
+    expect(await client.getFolderCustomFields('444')).toEqual(fields)
+    expect(await client.getSpaceCustomFields('333')).toEqual(fields)
+    expect(await client.getWorkspaceCustomFields('team1')).toEqual(fields)
+    const urls = mockFetch.mock.calls.map(call => String(call[0]))
+    expect(urls).toEqual([
+      'https://api.clickup.com/api/v2/folder/444/field',
+      'https://api.clickup.com/api/v2/space/333/field',
+      'https://api.clickup.com/api/v2/team/team1/field',
+    ])
+  })
+
   it('paginates until last_page is true', async () => {
     mockFetch
       .mockReturnValueOnce(mockResponse({ user: { id: 42, username: 'me' } }))

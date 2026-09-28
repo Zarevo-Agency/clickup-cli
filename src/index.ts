@@ -18,7 +18,9 @@ import {
   deleteFavorite,
 } from './config.js'
 import type { FilterEntry, FavoriteEntry } from './config.js'
-import { fetchMyTasks, printTasks } from './commands/tasks.js'
+import { fetchTaskRecords, printTaskResults, printTasks } from './commands/tasks.js'
+import { addTaskFilterOptions, resolveTaskFilterFlags } from './commands/task-filters.js'
+import type { TaskFilterFlags } from './commands/task-filters.js'
 import {
   updateTask,
   buildUpdatePayload,
@@ -63,7 +65,7 @@ import { fetchTimeInStatus, printTimeInStatus } from './commands/time-in-status.
 import { generateCompletion } from './commands/completion.js'
 import { printSkill, installSkillInteractive, installSkillTo } from './commands/skill.js'
 import { checkAuth } from './commands/auth.js'
-import { searchTasks, resolveSpaceNameToId } from './commands/search.js'
+import { searchTaskRecords } from './commands/search.js'
 import { manageDependency } from './commands/depend.js'
 import type { DependOptions } from './commands/depend.js'
 import { moveTask } from './commands/move.js'
@@ -274,24 +276,6 @@ function wrapAction<T extends unknown[]>(
   }
 }
 
-interface TaskFilterOpts {
-  status?: string
-  list?: string
-  space?: string
-  name?: string
-  type?: string
-  all?: boolean
-  includeClosed?: boolean
-  assignee?: string
-  tag?: string
-  dueBefore?: string
-  dueAfter?: string
-  createdAfter?: string
-  createdBefore?: string
-  field?: string[]
-  json?: boolean
-}
-
 function parseOptionalNumberOption(value: string, optionName: string): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) {
@@ -428,98 +412,22 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
       }),
     )
 
-  program
-    .command('tasks')
-    .description('List tasks assigned to you by default. Use --all to search across all assignees.')
-    .option('--status <status>', 'Filter by status (e.g. "in progress")')
-    .option('--list <listId>', 'Filter by list ID')
-    .option('--space <spaceId|name>', 'Filter by space ID or name (partial match)')
-    .option('--name <partial>', 'Filter by name (case-insensitive contains)')
-    .option(
-      '--type <type>',
-      'Filter by task type (e.g. "task", "initiative", or custom type name/ID)',
-    )
-    .option('--all', 'Include all tasks, not just mine')
-    .option('--include-closed', 'Include done/closed tasks')
-    .option('--assignee <userId>', 'Filter by assignee (user ID or "me")')
-    .option('--tag <tag>', 'Filter by tag name')
-    .option('--due-before <date>', 'Tasks due before date (YYYY-MM-DD)')
-    .option('--due-after <date>', 'Tasks due after date (YYYY-MM-DD)')
-    .option('--created-after <date>', 'Tasks created after date (YYYY-MM-DD)')
-    .option('--created-before <date>', 'Tasks created before date (YYYY-MM-DD)')
-    .option('--field <nameAndValue...>', 'Filter by custom field: --field "Name" value')
-    .option('--json', 'Force JSON output even in terminal')
-    .action(
-      wrapAction(async (opts: TaskFilterOpts) => {
-        const config = loadConfig(getProfileName())
-
-        let assigneeIds: number[] | undefined
-        if (opts.assignee) {
-          if (opts.assignee === 'me') {
-            const client = new ClickUpClient(config)
-            const me = await client.getMe()
-            assigneeIds = [me.id]
-          } else {
-            assigneeIds = [Number(opts.assignee)]
-          }
-        }
-
-        let resolvedSpaceId: string | undefined
-        if (opts.space) {
-          resolvedSpaceId = await resolveSpaceNameToId(config, opts.space)
-        }
-
-        const parseDateFilter = (d: string): number => {
-          const parts = d.split('-')
-          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime()
-        }
-
-        let customFields: Array<{ field_id: string; operator: string; value?: unknown }> | undefined
-        if (opts.field?.length) {
-          if (opts.field.length % 2 !== 0) {
-            throw new Error('--field requires pairs: --field "Name" value')
-          }
-          if (!opts.list) {
-            throw new Error('--field filtering requires --list to resolve field names')
-          }
-          const client = new ClickUpClient(config)
-          const fields = await client.getListCustomFields(opts.list)
-          customFields = []
-          for (let i = 0; i < opts.field.length; i += 2) {
-            const fieldName = opts.field[i]!
-            const fieldValue = opts.field[i + 1]!
-            const match = fields.find(f => f.name.toLowerCase() === fieldName.toLowerCase())
-            if (!match) {
-              const available = fields.map(f => f.name).join(', ')
-              throw new Error(`Field "${fieldName}" not found. Available: ${available}`)
-            }
-            customFields.push({
-              field_id: match.id,
-              operator: '=',
-              value: fieldValue,
-            })
-          }
-        }
-
-        const tasks = await fetchMyTasks(config, {
-          typeFilter: opts.type,
-          statuses: opts.status ? [opts.status] : undefined,
-          listIds: opts.list ? [opts.list] : undefined,
-          spaceIds: resolvedSpaceId ? [resolvedSpaceId] : undefined,
-          name: opts.name,
-          all: opts.all,
-          assignees: assigneeIds,
-          tags: opts.tag ? [opts.tag] : undefined,
-          dueDateLt: opts.dueBefore ? parseDateFilter(opts.dueBefore) : undefined,
-          dueDateGt: opts.dueAfter ? parseDateFilter(opts.dueAfter) : undefined,
-          dateCreatedGt: opts.createdAfter ? parseDateFilter(opts.createdAfter) : undefined,
-          dateCreatedLt: opts.createdBefore ? parseDateFilter(opts.createdBefore) : undefined,
-          customFields,
-          includeClosed: opts.includeClosed,
-        })
-        await printTasks(tasks, opts.json ?? false, config)
-      }),
-    )
+  addTaskFilterOptions(
+    program
+      .command('tasks')
+      .description(
+        'List tasks assigned to you by default. Use --all to search across all assignees.',
+      )
+      .option('--name <partial>', 'Filter by name (case-insensitive contains)'),
+  ).action(
+    wrapAction(async (opts: TaskFilterFlags & { name?: string }) => {
+      const config = loadConfig(getProfileName())
+      const client = new ClickUpClient(config)
+      const filters = await resolveTaskFilterFlags(client, config.teamId, opts)
+      const records = await fetchTaskRecords(config, { ...filters, name: opts.name }, client)
+      await printTaskResults(records, opts, config)
+    }),
+  )
 
   program
     .command('task <taskId>')
@@ -1312,113 +1220,26 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
       }),
     )
 
-  program
-    .command('search [query]')
-    .description(
-      'Search tasks by name. Without a query, lists tasks filtered by flags. Defaults to your tasks; use --all for all assignees.',
-    )
-    .option('--status <status>', 'Filter by status')
-    .option('--list <listId>', 'Filter by list ID')
-    .option('--space <spaceId|name>', 'Filter by space ID or name (partial match)')
-    .option('--all', 'Search all tasks, not just mine')
-    .option('--include-closed', 'Include done/closed tasks in search')
-    .option('--assignee <userId>', 'Filter by assignee (user ID or "me")')
-    .option('--tag <tag>', 'Filter by tag name')
-    .option('--due-before <date>', 'Tasks due before date (YYYY-MM-DD)')
-    .option('--due-after <date>', 'Tasks due after date (YYYY-MM-DD)')
-    .option('--created-after <date>', 'Tasks created after date (YYYY-MM-DD)')
-    .option('--created-before <date>', 'Tasks created before date (YYYY-MM-DD)')
-    .option('--field <nameAndValue...>', 'Filter by custom field: --field "Name" value')
-    .option('--json', 'Force JSON output even in terminal')
-    .action(
-      wrapAction(
-        async (
-          query: string | undefined,
-          opts: {
-            status?: string
-            list?: string
-            space?: string
-            all?: boolean
-            includeClosed?: boolean
-            assignee?: string
-            tag?: string
-            dueBefore?: string
-            dueAfter?: string
-            createdAfter?: string
-            createdBefore?: string
-            field?: string[]
-            json?: boolean
-          },
-        ) => {
-          const config = loadConfig(getProfileName())
-
-          let assigneeIds: number[] | undefined
-          if (opts.assignee) {
-            if (opts.assignee === 'me') {
-              const client = new ClickUpClient(config)
-              const me = await client.getMe()
-              assigneeIds = [me.id]
-            } else {
-              assigneeIds = [Number(opts.assignee)]
-            }
-          }
-
-          let resolvedSpaceId: string | undefined
-          if (opts.space) {
-            resolvedSpaceId = await resolveSpaceNameToId(config, opts.space)
-          }
-
-          const parseDateFilter = (d: string): number => {
-            const parts = d.split('-')
-            return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime()
-          }
-
-          let customFields:
-            Array<{ field_id: string; operator: string; value?: unknown }> | undefined
-          if (opts.field?.length) {
-            if (opts.field.length % 2 !== 0) {
-              throw new Error('--field requires pairs: --field "Name" value')
-            }
-            if (!opts.list) {
-              throw new Error('--field filtering requires --list to resolve field names')
-            }
-            const client = new ClickUpClient(config)
-            const fields = await client.getListCustomFields(opts.list)
-            customFields = []
-            for (let i = 0; i < opts.field.length; i += 2) {
-              const fieldName = opts.field[i]!
-              const fieldValue = opts.field[i + 1]!
-              const match = fields.find(f => f.name.toLowerCase() === fieldName.toLowerCase())
-              if (!match) {
-                const available = fields.map(f => f.name).join(', ')
-                throw new Error(`Field "${fieldName}" not found. Available: ${available}`)
-              }
-              customFields.push({
-                field_id: match.id,
-                operator: '=',
-                value: fieldValue,
-              })
-            }
-          }
-
-          const tasks = await searchTasks(config, query, {
-            status: opts.status,
-            all: opts.all,
-            includeClosed: opts.includeClosed,
-            listIds: opts.list ? [opts.list] : undefined,
-            spaceIds: resolvedSpaceId ? [resolvedSpaceId] : undefined,
-            assignees: assigneeIds,
-            tags: opts.tag ? [opts.tag] : undefined,
-            dueDateLt: opts.dueBefore ? parseDateFilter(opts.dueBefore) : undefined,
-            dueDateGt: opts.dueAfter ? parseDateFilter(opts.dueAfter) : undefined,
-            dateCreatedGt: opts.createdAfter ? parseDateFilter(opts.createdAfter) : undefined,
-            dateCreatedLt: opts.createdBefore ? parseDateFilter(opts.createdBefore) : undefined,
-            customFields,
-          })
-          await printTasks(tasks, opts.json ?? false, config)
-        },
+  addTaskFilterOptions(
+    program
+      .command('search [query]')
+      .description(
+        'Search tasks by name. Without a query, lists tasks filtered by flags. Defaults to your tasks; use --all for all assignees.',
       ),
-    )
+  ).action(
+    wrapAction(async (query: string | undefined, opts: TaskFilterFlags) => {
+      const config = loadConfig(getProfileName())
+      const client = new ClickUpClient(config)
+      const { statuses, ...filters } = await resolveTaskFilterFlags(client, config.teamId, opts)
+      const records = await searchTaskRecords(
+        config,
+        query,
+        { ...filters, status: statuses },
+        client,
+      )
+      await printTaskResults(records, opts, config)
+    }),
+  )
 
   program
     .command('summary')
