@@ -1899,6 +1899,79 @@ describe('createListFromTemplate', () => {
     const url = String(mockFetch.mock.calls[0]![0])
     expect(url).toContain('/folder/folder1/list_template/tmpl2')
   })
+
+  it('sends only the name without options and nests options when given', async () => {
+    mockFetch.mockReturnValue(mockResponse({ id: 'newlist3' }))
+    await client.createListFromTemplate('space1', 't-1', 'A', 'space')
+    await client.createListFromTemplate('space1', 't-1', 'B', 'space', { subtasks: false })
+    const bodies = mockFetch.mock.calls.map(call => JSON.parse(String(call[1].body)) as unknown)
+    expect(bodies).toEqual([{ name: 'A' }, { name: 'B', options: { subtasks: false } }])
+  })
+})
+
+describe('createFolderFromTemplate', () => {
+  let client: import('../../src/api.js').ClickUpClient
+
+  beforeEach(async () => {
+    vi.stubGlobal('fetch', mockFetch)
+    vi.clearAllMocks()
+    const { ClickUpClient } = await import('../../src/api.js')
+    client = new ClickUpClient({ apiToken: 'pk_test' })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('POSTs name and options to the space folder_template endpoint', async () => {
+    mockFetch.mockReturnValue(mockResponse({ id: 3001, folder: { id: '3001', name: 'Acme' } }))
+    const result = await client.createFolderFromTemplate('2001', 't-1001', 'Acme', {
+      return_immediately: false,
+    })
+    expect(result).toEqual({ id: 3001, folder: { id: '3001', name: 'Acme' } })
+    const [url, init] = mockFetch.mock.calls[0]! as [string, RequestInit]
+    expect(url).toBe('https://api.clickup.com/api/v2/space/2001/folder_template/t-1001')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: 'Acme',
+      options: { return_immediately: false },
+    })
+  })
+})
+
+describe('getTaskTemplates', () => {
+  let client: import('../../src/api.js').ClickUpClient
+
+  beforeEach(async () => {
+    vi.stubGlobal('fetch', mockFetch)
+    vi.clearAllMocks()
+    const { ClickUpClient } = await import('../../src/api.js')
+    client = new ClickUpClient({ apiToken: 'pk_test' })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reads pages until an empty page', async () => {
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ templates: [{ id: 'tt1', name: 'A' }] }))
+      .mockReturnValueOnce(mockResponse({ templates: [{ id: 'tt2', name: 'B' }] }))
+      .mockReturnValueOnce(mockResponse({ templates: [] }))
+    const result = await client.getTaskTemplates('team1')
+    expect(result.map(t => t.id)).toEqual(['tt1', 'tt2'])
+    const urls = mockFetch.mock.calls.map(call => String(call[0]))
+    expect(urls).toEqual(
+      [0, 1, 2].map(p => expect.stringContaining(`/team/team1/taskTemplate?page=${p}`)),
+    )
+  })
+
+  it('stops when a page repeats known templates', async () => {
+    mockFetch.mockReturnValue(mockResponse({ templates: [{ id: 'tt1', name: 'A' }] }))
+    const result = await client.getTaskTemplates('team1')
+    expect(result).toEqual([{ id: 'tt1', name: 'A' }])
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('postComment', () => {

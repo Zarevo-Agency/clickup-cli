@@ -1032,10 +1032,24 @@ export class ClickUpClient {
     templateId: string,
     name: string,
     containerType: 'space' | 'folder',
+    options?: Record<string, unknown>,
   ): Promise<{ id: string }> {
     return this.request<{ id: string }>(
       `/${containerType}/${containerId}/list_template/${templateId}`,
-      { method: 'POST', body: JSON.stringify({ name }) },
+      { method: 'POST', body: JSON.stringify(options ? { name, options } : { name }) },
+    )
+  }
+
+  /** `id` is numeric in the spec while `folder.id` is a string; callers should coerce. */
+  async createFolderFromTemplate(
+    spaceId: string,
+    templateId: string,
+    name: string,
+    options?: Record<string, unknown>,
+  ): Promise<{ id?: string | number; folder?: { id: string; name: string } }> {
+    return this.request<{ id?: string | number; folder?: { id: string; name: string } }>(
+      `/space/${spaceId}/folder_template/${templateId}`,
+      { method: 'POST', body: JSON.stringify(options ? { name, options } : { name }) },
     )
   }
 
@@ -1627,11 +1641,29 @@ export class ClickUpClient {
     )
   }
 
+  /**
+   * The endpoint pages via `page` but reports no `last_page`, so read until a page
+   * is empty or brings no new IDs (guards against a server ignoring `page`).
+   */
   async getTaskTemplates(teamId: string): Promise<TaskTemplate[]> {
-    const data = await this.request<{ templates: TaskTemplate[] }>(
-      `/team/${teamId}/taskTemplate?page=0`,
+    const all: TaskTemplate[] = []
+    const seen = new Set<string>()
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const data = await this.request<{ templates: TaskTemplate[] }>(
+        `/team/${teamId}/taskTemplate?page=${page}`,
+      )
+      const before = all.length
+      for (const t of readCollectionField<TaskTemplate>(data, 'templates', 'task templates')) {
+        if (seen.has(t.id)) continue
+        seen.add(t.id)
+        all.push(t)
+      }
+      if (all.length === before) return all
+    }
+    process.stderr.write(
+      `Warning: reached maximum page limit (${MAX_PAGES}), results may be incomplete\n`,
     )
-    return readCollectionField<TaskTemplate>(data, 'templates', 'task templates')
+    return all
   }
 
   async createTaskFromTemplate(listId: string, templateId: string, name: string): Promise<Task> {

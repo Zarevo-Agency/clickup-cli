@@ -135,6 +135,7 @@ Status: :white_check_mark: implemented | :construction: planned | :no_entry_sign
 | List templates   | `cup list-templates`               | :white_check_mark: |
 | Folder tmpl.     | `cup folder-templates`             | :white_check_mark: |
 | Create from tpl  | `cup list-from-template <name>`    | :white_check_mark: |
+| Folder from tpl  | `cup folder-from-template <name>`  | :white_check_mark: |
 
 ## Views
 

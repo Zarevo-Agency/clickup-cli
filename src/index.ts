@@ -208,6 +208,10 @@ import {
   formatFolderTemplatesMarkdown,
 } from './commands/folder-templates.js'
 import { createListFromTemplate } from './commands/list-from-template.js'
+import {
+  createFolderFromTemplate,
+  formatFolderFromTemplate,
+} from './commands/folder-from-template.js'
 import { listViews, formatViews, formatViewsMarkdown } from './commands/views.js'
 import {
   formatChannelsTable,
@@ -3101,15 +3105,37 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
   program
     .command('list-from-template <name>')
     .description('Create a list from a list template')
-    .requiredOption('--template <id>', 'Template ID (find with list-templates)')
-    .option('--space <spaceId>', 'Create in this space')
+    .requiredOption('--template <idOrName>', 'Template ID or exact name (find with list-templates)')
+    .option('--space <spaceIdOrName>', 'Create in this space')
     .option('--folder <folderId>', 'Create in this folder')
+    .option(
+      '--option <key=value>',
+      'Template option from the API spec, e.g. old_due_date=true (repeatable)',
+      collect,
+      [],
+    )
+    .option(
+      '--start-date <date>',
+      'Project start date for remapping task dates (YYYY-MM-DD or ISO 8601)',
+    )
+    .option(
+      '--due-date <date>',
+      'Project due date for remapping task dates (YYYY-MM-DD or ISO 8601)',
+    )
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
         async (
           name: string,
-          opts: { template: string; space?: string; folder?: string; json?: boolean },
+          opts: {
+            template: string
+            space?: string
+            folder?: string
+            option: string[]
+            startDate?: string
+            dueDate?: string
+            json?: boolean
+          },
         ) => {
           const config = loadConfig(getProfileName())
           const result = await createListFromTemplate(config, name, opts)
@@ -3117,6 +3143,53 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
             console.log(JSON.stringify(result, null, 2))
           } else {
             console.log(`Created list "${name}" (${result.id}) from template`)
+          }
+        },
+      ),
+    )
+
+  program
+    .command('folder-from-template <name>')
+    .description('Create a folder from a folder template')
+    .requiredOption('--space <spaceIdOrName>', 'Create in this space')
+    .requiredOption(
+      '--template <idOrName>',
+      'Template ID or exact name (find with folder-templates)',
+    )
+    .option(
+      '--option <key=value>',
+      'Template option from the API spec, e.g. old_due_date=true (repeatable)',
+      collect,
+      [],
+    )
+    .option(
+      '--start-date <date>',
+      'Project start date for remapping task dates (YYYY-MM-DD or ISO 8601)',
+    )
+    .option(
+      '--due-date <date>',
+      'Project due date for remapping task dates (YYYY-MM-DD or ISO 8601)',
+    )
+    .option('--json', 'Force JSON output even in terminal')
+    .action(
+      wrapAction(
+        async (
+          name: string,
+          opts: {
+            space: string
+            template: string
+            option: string[]
+            startDate?: string
+            dueDate?: string
+            json?: boolean
+          },
+        ) => {
+          const config = loadConfig(getProfileName())
+          const result = await createFolderFromTemplate(config, name, opts)
+          if (shouldOutputJson(opts.json ?? false)) {
+            console.log(JSON.stringify(result, null, 2))
+          } else {
+            console.log(formatFolderFromTemplate(result))
           }
         },
       ),
