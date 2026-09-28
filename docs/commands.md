@@ -390,9 +390,9 @@ Without `--all`, your own user ID is always sent as an assignee filter as well, 
 | `RANGE`                         | Between two comma-separated values: `RANGE 10,20` |
 | `ANY` `ALL` `NOT ANY` `NOT ALL` | Comma-separated values: `ANY Proposal,Won`        |
 
-Values are converted by field type: dropdown options (by name or ID) are sent as their `orderindex`, label options as their option ID, numbers and currency become numbers, dates use the formats above, checkboxes take `true`/`false`, people fields take user IDs or `me`. Label fields do not support `=`; use `ANY` or `ALL`. Other types are sent as text.
+Values are converted by field type: dropdown options (by name, ID or orderindex) are sent as their `orderindex`, label options as their option ID, numbers and currency become numbers, dates use the formats above or Unix ms, checkboxes take `true`/`false`, people fields take user IDs or `me`. Label fields do not support `=`; use `ANY` or `ALL`. Other types are sent as text.
 
-Field names are looked up in the fields of `--list`, `--folder` and `--space` plus workspace-level fields. When a name is missing there and `--space` or `--folder` is given, the fields of every list in that scope are checked too. Without any scope only workspace-level fields are found; pass `--list`, `--folder`, `--space` or the field ID. A field ID that is not found in scope is sent with its values unconverted. If the same name belongs to different fields, cup lists them and asks for the ID (`cup fields <listId>` shows IDs).
+With `--list`, field names are looked up in that list's fields, which include inherited workspace, space and folder fields. Otherwise cup checks workspace-level fields plus the fields of `--folder` and `--space`; when a name is missing there, the fields of every list in that scope are checked too. Without any scope only workspace-level fields are found; pass `--list`, `--folder`, `--space` or the field ID. A field ID that is not found in scope is sent with its values unconverted. If the same name belongs to different fields, cup lists them and asks for the ID (`cup fields <listId>` shows IDs).
 
 #### JSON output
 

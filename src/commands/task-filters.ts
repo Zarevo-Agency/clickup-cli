@@ -236,7 +236,9 @@ function findOption(
   const options = field.type_config?.options ?? []
   const lower = raw.toLowerCase()
   const option =
-    options.find(o => nameOf(o)?.toLowerCase() === lower) ?? options.find(o => o.id === raw)
+    options.find(o => nameOf(o)?.toLowerCase() === lower) ??
+    options.find(o => o.id === raw) ??
+    (NUMERIC_ID_RE.test(raw) ? options.find(o => Number(o.orderindex) === Number(raw)) : undefined)
   if (!option) {
     const available = options.map(o => nameOf(o) ?? o.id).join(', ') || '(none)'
     throw new Error(`Option "${raw}" not found in field "${field.name}". Available: ${available}`)
@@ -261,6 +263,7 @@ export function convertFieldValue(
       return n
     }
     case 'date':
+      if (NUMERIC_ID_RE.test(raw)) return Number(raw)
       try {
         return parseDueDate(raw, ctx.timezone).ms
       } catch (err) {
@@ -341,14 +344,14 @@ async function listIdsInScope(client: ClickUpClient, scope: FieldScope): Promise
       for (const list of await client.getFolderLists(folder.id)) ids.add(list.id)
     }
   }
-  for (const id of scope.listIds) ids.delete(id)
   return [...ids]
 }
 
 /**
- * Resolve field references (name or UUID) to definitions. Checks the
- * workspace plus the given space/folder/list endpoints first; when a name is
- * still missing, scans every list inside the given folders and spaces, since
+ * Resolve field references (name or UUID) to definitions. With --list only
+ * that list's fields are used (they include inherited fields). Otherwise the
+ * workspace, space and folder endpoints are checked; when a name is still
+ * missing, every list inside the given folders and spaces is scanned, since
  * space and folder endpoints omit list-level fields.
  */
 export async function resolveFieldRefs(
@@ -361,19 +364,21 @@ export async function resolveFieldRefs(
   const addAll = (groups: CustomFieldDefinition[][]) => {
     for (const group of groups) for (const field of group) pool.set(field.id, field)
   }
-  addAll(
-    await Promise.all([
-      client.getWorkspaceCustomFields(teamId),
-      ...scope.spaceIds.map(id => client.getSpaceCustomFields(id)),
-      ...scope.folderIds.map(id => client.getFolderCustomFields(id)),
-      ...scope.listIds.map(id => client.getListCustomFields(id)),
-    ]),
-  )
-
   const hasContainerScope = scope.spaceIds.length > 0 || scope.folderIds.length > 0
-  if (hasContainerScope && refs.some(ref => matchFields([...pool.values()], ref).length === 0)) {
-    for (const listId of await listIdsInScope(client, scope)) {
-      addAll([await client.getListCustomFields(listId)])
+  if (scope.listIds.length > 0) {
+    addAll(await Promise.all(scope.listIds.map(id => client.getListCustomFields(id))))
+  } else {
+    addAll(
+      await Promise.all([
+        client.getWorkspaceCustomFields(teamId),
+        ...scope.spaceIds.map(id => client.getSpaceCustomFields(id)),
+        ...scope.folderIds.map(id => client.getFolderCustomFields(id)),
+      ]),
+    )
+    if (hasContainerScope && refs.some(ref => matchFields([...pool.values()], ref).length === 0)) {
+      for (const listId of await listIdsInScope(client, scope)) {
+        addAll([await client.getListCustomFields(listId)])
+      }
     }
   }
 

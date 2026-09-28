@@ -98,18 +98,21 @@ describe('convertFieldValue', () => {
     expect(() => convertFieldValue(owner, 'alice', {})).toThrow('expects user IDs or "me"')
   })
 
-  it('maps dropdown option names to orderindex and label names to ids', () => {
+  it('maps dropdown options (name, id or orderindex) to orderindex and labels to ids', () => {
     expect(convertFieldValue(stage, 'won', {})).toBe(1)
     expect(convertFieldValue(labels, 'beta', {})).toBe('lbl-b')
+    expect(convertFieldValue(stage, '1', {})).toBe(1)
+    expect(convertFieldValue(stage, 'opt-lead', {})).toBe(0)
     expect(() => convertFieldValue(stage, 'Lost', {})).toThrow(
       'Option "Lost" not found in field "Deal Stage". Available: Lead, Won',
     )
   })
 
-  it('parses dates in the user timezone', () => {
+  it('parses dates in the user timezone and keeps raw ms', () => {
     expect(convertFieldValue(closeDate, '2026-03-01', { timezone: 'Europe/Berlin' })).toBe(
       Date.UTC(2026, 1, 28, 23, 0, 0),
     )
+    expect(convertFieldValue(closeDate, '1772319600000', {})).toBe(1772319600000)
     expect(() => convertFieldValue(closeDate, 'soon', {})).toThrow('Field "Close Date": Date must')
   })
 
@@ -278,8 +281,10 @@ describe('resolveTaskFilterFlags', () => {
     )
   })
 
-  it('builds custom field filters from --field and --where via list fields', async () => {
-    const client = fakeClient()
+  it('builds custom field filters from --field and --where via list fields only', async () => {
+    const client = fakeClient({
+      getListCustomFields: vi.fn().mockResolvedValue([stage, amount, done]),
+    })
     const filters = await run(client, {
       list: ['111'],
       field: ['deal stage', 'Won'],
@@ -291,6 +296,7 @@ describe('resolveTaskFilterFlags', () => {
       { field_id: 'f-check', operator: '=', value: true },
     ])
     expect(client.getListCustomFields).toHaveBeenCalledWith('111')
+    expect(client.getWorkspaceCustomFields).not.toHaveBeenCalled()
   })
 
   it('resolves --field without --list from workspace fields', async () => {
