@@ -121,9 +121,9 @@ function wallClockToTimezoneMs(
   return approxUtc.getTime() + offset
 }
 
-export function parseAssigneeId(value: string): number {
+export function parseAssigneeId(value: string, label = 'Assignee'): number {
   const id = Number(value)
-  if (!Number.isInteger(id)) throw new Error('Assignee must be a numeric user ID or "me"')
+  if (!Number.isInteger(id)) throw new Error(`${label} must be a numeric user ID or "me"`)
   return id
 }
 
@@ -133,6 +133,28 @@ export async function resolveAssigneeId(client: ClickUpClient, value: string): P
     return user.id
   }
   return parseAssigneeId(value)
+}
+
+/** Flatten a repeatable, comma-separated flag value into trimmed, non-empty entries. */
+export function splitIdList(value: string | readonly string[] | undefined): string[] {
+  if (value === undefined) return []
+  const values = typeof value === 'string' ? [value] : value
+  return values
+    .flatMap(v => v.split(','))
+    .map(v => v.trim())
+    .filter(Boolean)
+}
+
+/** Expand a user flag value and replace "me" with the current user's ID. */
+export async function resolveUserIds(
+  client: Pick<ClickUpClient, 'getMe'>,
+  value: string | readonly string[] | undefined,
+): Promise<string[]> {
+  const ids: string[] = []
+  for (const id of splitIdList(value)) {
+    ids.push(id === 'me' ? String((await client.getMe()).id) : id)
+  }
+  return ids
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -145,6 +167,19 @@ export async function resolveGroupId(client: ClickUpClient, value: string): Prom
   if (match) return match.id
   const available = groups.map(g => `@${g.handle}`).join(', ') || '(none)'
   throw new Error(`Group "${value}" not found. Available: ${available}`)
+}
+
+export function isClearValue(value: string): boolean {
+  const lower = value.toLowerCase()
+  return lower === 'none' || lower === 'clear'
+}
+
+export function parsePoints(value: string): number {
+  const points = Number(value)
+  if (value.trim() === '' || !Number.isFinite(points) || points < 0) {
+    throw new Error('Points must be a non-negative number (e.g. 3 or 0.5)')
+  }
+  return points
 }
 
 export function parseTimeEstimate(value: string): number {
@@ -170,11 +205,14 @@ export interface UpdateCommandOptions {
   priority?: string
   dueDate?: string
   startDate?: string
-  assignee?: string
-  removeAssignee?: string
+  assignee?: string | string[]
+  removeAssignee?: string | string[]
+  watcher?: string | string[]
+  removeWatcher?: string | string[]
   groupAssigneeIds?: string[]
   removeGroupAssigneeIds?: string[]
   timeEstimate?: string
+  points?: string
   parent?: string
   archive?: boolean
   unarchive?: boolean
@@ -195,9 +233,11 @@ export function buildUpdatePayload(
   }
   if (opts.description !== undefined) payload.markdown_content = opts.description
   if (opts.status !== undefined) payload.status = opts.status
-  if (opts.priority !== undefined) payload.priority = parsePriority(opts.priority)
+  if (opts.priority !== undefined) {
+    payload.priority = isClearValue(opts.priority) ? null : parsePriority(opts.priority)
+  }
   if (opts.dueDate !== undefined) {
-    if (opts.dueDate === 'none' || opts.dueDate === 'clear') {
+    if (isClearValue(opts.dueDate)) {
       payload.due_date = null
     } else {
       const parsed = parseDueDate(opts.dueDate, timezone)
@@ -206,19 +246,18 @@ export function buildUpdatePayload(
     }
   }
   if (opts.startDate !== undefined) {
-    const parsed = parseDueDate(opts.startDate, timezone)
-    payload.start_date = parsed.ms
-    payload.start_date_time = parsed.hasTime
-  }
-  if (opts.assignee !== undefined || opts.removeAssignee !== undefined) {
-    payload.assignees = {}
-    if (opts.assignee !== undefined) {
-      payload.assignees.add = [parseAssigneeId(opts.assignee)]
-    }
-    if (opts.removeAssignee !== undefined) {
-      payload.assignees.rem = [parseAssigneeId(opts.removeAssignee)]
+    if (isClearValue(opts.startDate)) {
+      payload.start_date = null
+    } else {
+      const parsed = parseDueDate(opts.startDate, timezone)
+      payload.start_date = parsed.ms
+      payload.start_date_time = parsed.hasTime
     }
   }
+  const assignees = buildUserDelta(opts.assignee, opts.removeAssignee, 'Assignee')
+  if (assignees) payload.assignees = assignees
+  const watchers = buildUserDelta(opts.watcher, opts.removeWatcher, 'Watcher')
+  if (watchers) payload.watchers = watchers
   const addGroups = opts.groupAssigneeIds ?? []
   const remGroups = opts.removeGroupAssigneeIds ?? []
   if (addGroups.length > 0 || remGroups.length > 0) {
@@ -228,7 +267,12 @@ export function buildUpdatePayload(
     }
   }
   if (opts.timeEstimate !== undefined) {
-    payload.time_estimate = parseTimeEstimate(opts.timeEstimate)
+    payload.time_estimate = isClearValue(opts.timeEstimate)
+      ? null
+      : parseTimeEstimate(opts.timeEstimate)
+  }
+  if (opts.points !== undefined) {
+    payload.points = isClearValue(opts.points) ? null : parsePoints(opts.points)
   }
   if (opts.parent !== undefined) {
     payload.parent = opts.parent
@@ -244,6 +288,20 @@ export function buildUpdatePayload(
   return payload
 }
 
+function buildUserDelta(
+  add: string | readonly string[] | undefined,
+  rem: string | readonly string[] | undefined,
+  label: string,
+): { add?: number[]; rem?: number[] } | undefined {
+  const addIds = splitIdList(add).map(id => parseAssigneeId(id, label))
+  const remIds = splitIdList(rem).map(id => parseAssigneeId(id, label))
+  if (addIds.length === 0 && remIds.length === 0) return undefined
+  return {
+    ...(addIds.length > 0 ? { add: addIds } : {}),
+    ...(remIds.length > 0 ? { rem: remIds } : {}),
+  }
+}
+
 function hasUpdateFields(options: UpdateTaskOptions): boolean {
   return (
     options.name !== undefined ||
@@ -254,8 +312,10 @@ function hasUpdateFields(options: UpdateTaskOptions): boolean {
     options.due_date !== undefined ||
     options.start_date !== undefined ||
     options.time_estimate !== undefined ||
+    options.points !== undefined ||
     options.assignees !== undefined ||
     options.group_assignees !== undefined ||
+    options.watchers !== undefined ||
     options.parent !== undefined ||
     options.archived !== undefined ||
     options.custom_item_id !== undefined
@@ -268,7 +328,16 @@ async function resolveStatus(
   statusInput: string,
 ): Promise<string> {
   const task = await client.getTask(taskId)
-  const list = await client.getListWithStatuses(task.list.id)
+  return resolveListStatus(client, task.list.id, statusInput)
+}
+
+/** Fuzzy-match a status name against a list's statuses; throws with the available names. */
+export async function resolveListStatus(
+  client: Pick<ClickUpClient, 'getListWithStatuses'>,
+  listId: string,
+  statusInput: string,
+): Promise<string> {
+  const list = await client.getListWithStatuses(listId)
   const available = list.statuses.map(s => s.status)
   const matched = matchStatus(statusInput, available)
 
@@ -306,7 +375,7 @@ export async function updateTask(
 ): Promise<{ id: string; name: string }> {
   if (!hasUpdateFields(options) && typeInput === undefined)
     throw new Error(
-      'Provide at least one of: --name, --description, --status, --priority, --due-date, --start-date, --time-estimate, --assignee, --remove-assignee, --group-assignee, --remove-group-assignee, --parent, --archive, --unarchive, --type',
+      'Provide at least one of: --name, --description, --status, --priority, --due-date, --start-date, --time-estimate, --points, --assignee, --remove-assignee, --watcher, --remove-watcher, --group-assignee, --remove-group-assignee, --parent, --archive, --unarchive, --type',
     )
 
   const client = new ClickUpClient(config)

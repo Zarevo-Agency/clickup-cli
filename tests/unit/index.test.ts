@@ -707,6 +707,159 @@ describe('cup tasks / cup search filter flags', () => {
   })
 })
 
+describe('cup field --add / --remove-value', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockLoadConfig.mockClear().mockReturnValue(config)
+    mockSetCustomField.mockReset().mockResolvedValue({ results: [] })
+    mockShouldOutputJson.mockReset().mockReturnValue(false)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.exitCode = undefined
+  })
+
+  afterEach(() => {
+    process.exitCode = undefined
+  })
+
+  it('passes --add, --remove-value and --address pairs through', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(
+      [
+        'field',
+        'task-1',
+        '--add',
+        'Reviewers',
+        '1,2',
+        '--remove-value',
+        'Reviewers',
+        '3',
+        '--set',
+        'Site',
+        '1,2',
+        '--address',
+        'Main Square',
+      ],
+      { from: 'user' },
+    )
+    expect(mockSetCustomField).toHaveBeenCalledWith(config, 'task-1', {
+      set: ['Site', '1,2'],
+      address: 'Main Square',
+      add: ['Reviewers', '1,2'],
+      removeValue: ['Reviewers', '3'],
+    })
+  })
+
+  it('rejects --remove-value without exactly a name and a value', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(['field', 'task-1', '--remove-value', 'Reviewers'], {
+      from: 'user',
+    })
+    expect(console.error).toHaveBeenCalledWith(
+      '--remove-value requires exactly two arguments: field name and value',
+    )
+    expect(mockSetCustomField).not.toHaveBeenCalled()
+  })
+})
+
+describe('cup update and create write paths', () => {
+  const mockUpdateTaskApi = vi.fn()
+  const mockSetCustomFieldValue = vi.fn()
+  const mockCreateTaskFromTemplate = vi.fn()
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockLoadConfig.mockClear().mockReturnValue(config)
+    mockShouldOutputJson.mockReset().mockReturnValue(false)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.exitCode = undefined
+    mockUpdateTaskApi.mockReset().mockResolvedValue({ id: 'task-1', name: 'Task One' })
+    mockSetCustomFieldValue.mockReset().mockResolvedValue(undefined)
+    mockCreateTaskFromTemplate
+      .mockReset()
+      .mockResolvedValue({ id: 't-new', name: 'Task', url: 'https://app.clickup.com/t/t-new' })
+    vi.doMock('../../src/api.js', async importOriginal => {
+      const actual = await importOriginal<typeof import('../../src/api.js')>()
+      return {
+        ...actual,
+        ClickUpClient: vi.fn().mockImplementation(function () {
+          return {
+            getUserTimezone: vi.fn().mockResolvedValue(undefined),
+            getMe: vi.fn().mockResolvedValue({ id: 42, username: 'me' }),
+            getTask: vi.fn().mockResolvedValue({
+              id: 'task-1',
+              name: 'Task One',
+              custom_fields: [
+                { id: 'f-score', name: 'Score', type: 'number', value: null, type_config: {} },
+              ],
+            }),
+            resolveTaskId: vi.fn(async (id: string) => id),
+            updateTask: mockUpdateTaskApi,
+            setCustomFieldValue: mockSetCustomFieldValue,
+            createTaskFromTemplate: mockCreateTaskFromTemplate,
+          }
+        }),
+      }
+    })
+  })
+
+  afterEach(() => {
+    vi.doUnmock('../../src/api.js')
+    process.exitCode = undefined
+  })
+
+  it('update validates --field before writing anything', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(
+      ['update', 'task-1', '--priority', 'high', '--field', 'Score', 'lots'],
+      { from: 'user' },
+    )
+    expect(console.error).toHaveBeenCalledWith('Value "lots" is not a valid numeric value')
+    expect(mockUpdateTaskApi).not.toHaveBeenCalled()
+    expect(mockSetCustomFieldValue).not.toHaveBeenCalled()
+  })
+
+  it('update sends watchers, "me" assignees and field values', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(
+      [
+        'update',
+        'task-1',
+        '--assignee',
+        'me',
+        '--assignee',
+        '7',
+        '--watcher',
+        '8,9',
+        '--points',
+        'none',
+        '--field',
+        'f-score',
+        '5',
+      ],
+      { from: 'user' },
+    )
+    expect(process.exitCode).toBeUndefined()
+    expect(mockUpdateTaskApi).toHaveBeenCalledWith('task-1', {
+      assignees: { add: [42, 7] },
+      watchers: { add: [8, 9] },
+      points: null,
+    })
+    expect(mockSetCustomFieldValue).toHaveBeenCalledWith('task-1', 'f-score', 5)
+  })
+
+  it('create --template reports the flags applied afterwards', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(
+      ['create', '-n', 'Task', '-l', 'list-1', '--template', 't-9', '--priority', 'low'],
+      { from: 'user' },
+    )
+    expect(mockUpdateTaskApi).toHaveBeenCalledWith('t-new', { priority: 4 })
+    expect(console.log).toHaveBeenCalledWith('Applied after template: priority')
+  })
+})
+
 describe('global option collisions', () => {
   it('no subcommand declares a short flag that a global option already uses', async () => {
     // Commander resolves a shared short flag to the global option, so a

@@ -18,6 +18,8 @@ Status: :white_check_mark: implemented | :construction: planned | :no_entry_sign
 | List subtasks        | `cup subtasks <id>`                                                                | :white_check_mark: |
 | Assign / unassign    | `cup assign <id>`                                                                  | :white_check_mark: |
 | Group assignees      | `cup assign --group`, `cup update --group-assignee`, `cup create --group-assignee` | :white_check_mark: |
+| Watchers             | `cup update --watcher`, `cup update --remove-watcher`                              | :white_check_mark: |
+| Sprint points        | `cup create --points`, `cup update --points`                                       | :white_check_mark: |
 | Duplicate task       | `cup duplicate <id>`                                                               | :white_check_mark: |
 | Create from template | `cup create --template`                                                            | :white_check_mark: |
 | Task members         | `cup task-members <taskId>`                                                        | :white_check_mark: |
@@ -86,6 +88,8 @@ Comment reads (`comments`, `activity`, `list-comments`, `view-comments`, `commen
 | --------------------- | ------------------------- | ------------------ |
 | Set field value       | `cup field <id> --set`    | :white_check_mark: |
 | Remove field value    | `cup field <id> --remove` | :white_check_mark: |
+| Add/remove entries    | `cup field <id> --add`    | :white_check_mark: |
+| Files field value     | `cup api` (v3 upload)     | :no_entry_sign:    |
 | List available fields | `cup fields <listId>`     | :white_check_mark: |
 | Filter tasks by field | `cup tasks --where`       | :white_check_mark: |
 | Create custom field   | `cup field-create <name>` | :white_check_mark: |
