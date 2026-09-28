@@ -288,6 +288,8 @@ describe('bulkField', () => {
       { id: 'f-notes', name: 'Notes', type: 'text', value: null, type_config: {} },
       { id: 'f-score', name: 'Score', type: 'number', value: null, type_config: {} },
       { id: 'f-epic', name: 'Epic', type: 'tasks', value: null, type_config: {} },
+      { id: 'f-due', name: 'Review Date', type: 'date', value: null, type_config: {} },
+      { id: 'f-site', name: 'Site', type: 'location', value: null, type_config: {} },
       {
         id: 'f-stage',
         name: 'Stage',
@@ -362,6 +364,25 @@ describe('bulkField', () => {
       /Field "Missing" not found/,
     )
     expect(mockSetCustomFieldValue).not.toHaveBeenCalled()
+  })
+
+  it('sends value_options.time for a date with time on every task', async () => {
+    const { bulkField } = await import('../../../src/commands/bulk.js')
+    await bulkField(mockConfig, 'Review Date', '2025-06-15T09:30:00Z', ['t1', 't2'])
+
+    const ms = Date.UTC(2025, 5, 15, 9, 30)
+    expect(mockSetCustomFieldValue).toHaveBeenCalledWith('t1', 'f-due', ms, { time: true })
+    expect(mockSetCustomFieldValue).toHaveBeenCalledWith('t2', 'f-due', ms, { time: true })
+  })
+
+  it('passes --address through for a location field', async () => {
+    const { bulkField } = await import('../../../src/commands/bulk.js')
+    await bulkField(mockConfig, 'f-site', '1.5,2.5', ['t1'], { address: 'Main Square' })
+
+    expect(mockSetCustomFieldValue).toHaveBeenCalledWith('t1', 'f-site', {
+      location: { lat: 1.5, lng: 2.5 },
+      formatted_address: 'Main Square',
+    })
   })
 
   it('collects partial failures and continues', async () => {

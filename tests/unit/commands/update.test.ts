@@ -175,6 +175,14 @@ describe('updateTask', () => {
     await updateTask({ apiToken: 'pk_t', teamId: 'team1' }, 't1', { assignees: { rem: [99] } })
     expect(mockUpdateTask).toHaveBeenCalledWith('t1', { assignees: { rem: [99] } })
   })
+
+  it('accepts points or watchers as the only update', async () => {
+    const { updateTask } = await import('../../../src/commands/update.js')
+    await updateTask({ apiToken: 'pk_t', teamId: 'team1' }, 't1', { points: null })
+    expect(mockUpdateTask).toHaveBeenCalledWith('t1', { points: null })
+    await updateTask({ apiToken: 'pk_t', teamId: 'team1' }, 't1', { watchers: { add: [7] } })
+    expect(mockUpdateTask).toHaveBeenCalledWith('t1', { watchers: { add: [7] } })
+  })
 })
 
 describe('parsePriority', () => {
@@ -510,6 +518,66 @@ describe('buildUpdatePayload', () => {
     const { buildUpdatePayload } = await import('../../../src/commands/update.js')
     const payload = buildUpdatePayload({ parent: 'p1' })
     expect(payload.parent).toBe('p1')
+  })
+
+  it('sends null to clear priority, start date, time estimate and points', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    const payload = buildUpdatePayload({
+      priority: 'none',
+      startDate: 'clear',
+      timeEstimate: 'None',
+      points: 'none',
+    })
+    expect(payload).toEqual({
+      priority: null,
+      start_date: null,
+      time_estimate: null,
+      points: null,
+    })
+  })
+
+  it('keeps sending 0 for --time-estimate 0', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    expect(buildUpdatePayload({ timeEstimate: '0' })).toEqual({ time_estimate: 0 })
+  })
+
+  it('builds payload with points as a number', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    expect(buildUpdatePayload({ points: '2.5' })).toEqual({ points: 2.5 })
+    expect(() => buildUpdatePayload({ points: 'many' })).toThrow('Points must be')
+    expect(() => buildUpdatePayload({ points: '-1' })).toThrow('Points must be')
+  })
+
+  it('accepts repeatable and comma-separated assignees', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    const payload = buildUpdatePayload({ assignee: ['1,2', '3'], removeAssignee: ['4'] })
+    expect(payload.assignees).toEqual({ add: [1, 2, 3], rem: [4] })
+  })
+
+  it('omits assignees when the repeatable flags are empty', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    const payload = buildUpdatePayload({ assignee: [], removeAssignee: [], name: 'x' })
+    expect(payload).toEqual({ name: 'x' })
+  })
+
+  it('builds watchers add/rem', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    const payload = buildUpdatePayload({ watcher: ['5, 6'], removeWatcher: '7' })
+    expect(payload.watchers).toEqual({ add: [5, 6], rem: [7] })
+  })
+
+  it('names the watcher flag when a watcher ID is not numeric', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    expect(() => buildUpdatePayload({ watcher: 'alice' })).toThrow('Watcher must be a numeric')
+  })
+})
+
+describe('resolveUserIds', () => {
+  it('splits values and replaces "me" with the current user ID', async () => {
+    const { resolveUserIds } = await import('../../../src/commands/update.js')
+    const getMe = vi.fn().mockResolvedValue({ id: 42, username: 'me' })
+    await expect(resolveUserIds({ getMe }, ['me,1', '2'])).resolves.toEqual(['42', '1', '2'])
+    await expect(resolveUserIds({ getMe }, undefined)).resolves.toEqual([])
   })
 })
 

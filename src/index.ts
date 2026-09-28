@@ -22,8 +22,9 @@ import { fetchMyTasks, printTasks } from './commands/tasks.js'
 import {
   updateTask,
   buildUpdatePayload,
-  resolveAssigneeId,
   resolveGroupId,
+  resolveUserIds,
+  splitIdList,
 } from './commands/update.js'
 import type { UpdateCommandOptions } from './commands/update.js'
 import { createTask } from './commands/create.js'
@@ -68,12 +69,8 @@ import { manageDependency } from './commands/depend.js'
 import type { DependOptions } from './commands/depend.js'
 import { moveTask } from './commands/move.js'
 import type { MoveOptions } from './commands/move.js'
-import {
-  setCustomField,
-  findFieldByName,
-  parseFieldValue,
-  resolveTaskFieldValue,
-} from './commands/field.js'
+import { setCustomField, prepareFieldEntries, applyFieldEntry } from './commands/field.js'
+import type { CustomFieldEntry } from './commands/field.js'
 import { deleteTaskCommand } from './commands/delete.js'
 import { deleteListCommand } from './commands/list-delete.js'
 import { deleteFolderCommand } from './commands/folder-delete.js'
@@ -340,6 +337,14 @@ function resolveFieldSet(set: string[], valueFile?: string): [string, string] {
   return [name, value]
 }
 
+function resolveFieldPair(values: string[], flag: string): [string, string] {
+  const [name, value] = values
+  if (values.length !== 2 || name === undefined || value === undefined) {
+    throw new Error(`${flag} requires exactly two arguments: field name and value`)
+  }
+  return [name, value]
+}
+
 /**
  * Resolve a required message from either -m/--message or --message-file
  * (the latter accepts "-" for stdin). Throws if neither is provided.
@@ -552,21 +557,47 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
       '-s, --status <status>',
       'New status (fuzzy matched, e.g. "prog" matches "in progress")',
     )
-    .option('--priority <level>', 'Priority: urgent, high, normal, low (or 1-4)')
+    .option(
+      '--priority <level>',
+      'Priority: urgent, high, normal, low (or 1-4); "none"/"clear" to remove',
+    )
     .option(
       '--due-date <date>',
       'Due date (YYYY-MM-DD, YYYY-MM-DDTHH:MM[:SS], or full ISO 8601 with offset; or "none"/"clear" to remove)',
     )
     .option(
       '--start-date <date>',
-      'Start date (YYYY-MM-DD, YYYY-MM-DDTHH:MM[:SS], or full ISO 8601 with offset)',
+      'Start date (YYYY-MM-DD, YYYY-MM-DDTHH:MM[:SS], or full ISO 8601 with offset; or "none"/"clear" to remove)',
     )
     .option(
       '--time-estimate <duration>',
-      'Time estimate (e.g. "2h", "30m", "1h30m", "0" or "none" to clear)',
+      'Time estimate (e.g. "2h", "30m", "1h30m"); "none"/"clear" to remove',
     )
-    .option('--assignee <userId>', 'Add assignee by user ID or "me"')
-    .option('--remove-assignee <userId>', 'Remove assignee by user ID or "me"')
+    .option('--points <n>', 'Sprint points; "none"/"clear" to remove')
+    .option(
+      '--assignee <userId>',
+      'Add assignee by user ID or "me" (repeatable or comma-separated)',
+      collect,
+      [],
+    )
+    .option(
+      '--remove-assignee <userId>',
+      'Remove assignee by user ID or "me" (repeatable or comma-separated)',
+      collect,
+      [],
+    )
+    .option(
+      '--watcher <userId>',
+      'Add watcher by user ID or "me" (repeatable or comma-separated)',
+      collect,
+      [],
+    )
+    .option(
+      '--remove-watcher <userId>',
+      'Remove watcher by user ID or "me" (repeatable or comma-separated)',
+      collect,
+      [],
+    )
     .option(
       '--group-assignee <groupIds...>',
       'Add group assignee (UUID or @handle, can repeat or comma-separated)',
@@ -582,7 +613,10 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
     .option('--archive', 'Archive the task')
     .option('--unarchive', 'Unarchive the task')
     .option('--type <type>', 'Change task type (name or custom_item_id)')
-    .option('--field <nameAndValue...>', 'Set custom field: --field "Name" value')
+    .option(
+      '--field <nameAndValue...>',
+      'Set custom field: --field "Name" value (name or field UUID, can repeat)',
+    )
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
@@ -604,19 +638,11 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           })
           const config = loadConfig(getProfileName())
           const client = new ClickUpClient(config)
-          const [timezone] = await Promise.all([
-            client.getUserTimezone(),
-            opts.assignee === 'me'
-              ? resolveAssigneeId(client, 'me').then(id => {
-                  opts.assignee = String(id)
-                })
-              : Promise.resolve(),
-            opts.removeAssignee === 'me'
-              ? resolveAssigneeId(client, 'me').then(id => {
-                  opts.removeAssignee = String(id)
-                })
-              : Promise.resolve(),
-          ])
+          const timezone = await client.getUserTimezone()
+          opts.assignee = await resolveUserIds(client, opts.assignee)
+          opts.removeAssignee = await resolveUserIds(client, opts.removeAssignee)
+          opts.watcher = await resolveUserIds(client, opts.watcher)
+          opts.removeWatcher = await resolveUserIds(client, opts.removeWatcher)
           const groupAddRaw = (opts.groupAssignee ?? []).flatMap(splitCommaList)
           const groupRemRaw = (opts.removeGroupAssignee ?? []).flatMap(splitCommaList)
           if (groupAddRaw.length > 0 || groupRemRaw.length > 0) {
@@ -635,25 +661,21 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           const hasTypeName = opts.type !== undefined
           if (!hasFields && !hasTypeName && Object.keys(payload).length === 0) {
             throw new Error(
-              'Provide at least one of: --name, --description, --status, --priority, --due-date, --time-estimate, --assignee, --remove-assignee, --group-assignee, --remove-group-assignee, --parent, --archive, --unarchive, --type, --field',
+              'Provide at least one of: --name, --description, --status, --priority, --due-date, --start-date, --time-estimate, --points, --assignee, --remove-assignee, --watcher, --remove-watcher, --group-assignee, --remove-group-assignee, --parent, --archive, --unarchive, --type, --field',
             )
           }
           let result: { id: string; name: string } | undefined
+          let fieldEntries: CustomFieldEntry[] = []
+          if (hasFields) {
+            const task = await client.getTask(taskId)
+            fieldEntries = await prepareFieldEntries(client, task.custom_fields ?? [], opts.field!)
+            result = { id: task.id, name: task.name }
+          }
           if (Object.keys(payload).length > 0 || hasTypeName) {
             result = await updateTask(config, taskId, payload, opts.type)
           }
-          if (hasFields) {
-            if ((opts.field?.length ?? 0) % 2 !== 0) {
-              throw new Error('--field requires pairs: --field "Name" value')
-            }
-            for (let i = 0; i < (opts.field?.length ?? 0); i += 2) {
-              await setCustomField(config, taskId, { set: [opts.field![i]!, opts.field![i + 1]!] })
-            }
-            if (!result) {
-              const client = new ClickUpClient(config)
-              const task = await client.getTask(taskId)
-              result = { id: task.id, name: task.name }
-            }
+          for (const entry of fieldEntries) {
+            await applyFieldEntry(client, taskId, entry)
           }
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(result, null, 2))
@@ -690,13 +712,31 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
       '--start-date <date>',
       'Start date (YYYY-MM-DD, YYYY-MM-DDTHH:MM[:SS], or full ISO 8601 with offset)',
     )
-    .option('--assignee <userId>', 'Assignee user ID or "me"')
+    .option(
+      '--assignee <userId>',
+      'Assignee user ID or "me" (repeatable or comma-separated)',
+      collect,
+      [],
+    )
     .option('--group-assignee <groupIds>', 'Group assignees (UUID or @handle, comma-separated)')
     .option('--tags <tags>', 'Comma-separated tag names')
     .option('--custom-item-id <id>', 'Custom task type ID (use to create initiatives)')
     .option('--time-estimate <duration>', 'Time estimate (e.g. "2h", "30m", "1h30m")')
-    .option('--template <id>', 'Create from a task template (find IDs with cup templates)')
-    .option('--field <nameAndValue...>', 'Set custom field: --field "Name" value (can repeat)')
+    .option('--points <n>', 'Sprint points')
+    .option(
+      '--links-to <taskId>',
+      'Link the new task to this task: native id, custom id, or task URL',
+    )
+    .option('--notify-all', 'Also notify the task creator (assignees and watchers always are)')
+    .option('--check-required-fields', 'Fail if required custom fields are missing')
+    .option(
+      '--template <idOrName>',
+      'Create from a task template by ID or name (see cup templates); other flags are applied afterwards',
+    )
+    .option(
+      '--field <nameAndValue...>',
+      'Set custom field: --field "Name" value (name or field UUID, can repeat)',
+    )
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
@@ -718,9 +758,9 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           if (opts.list === 'sprint:current') {
             opts.list = await resolveActiveSprintListId(config)
           }
-          if (opts.assignee === 'me') {
+          if (splitIdList(opts.assignee).includes('me')) {
             const client = new ClickUpClient(config)
-            opts.assignee = String(await resolveAssigneeId(client, 'me'))
+            opts.assignee = await resolveUserIds(client, opts.assignee)
           }
           if (opts.groupAssignee !== undefined) {
             const rawList = splitCommaList(opts.groupAssignee)
@@ -749,25 +789,14 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
             }
             const client = new ClickUpClient(config)
             const fields = await client.getListCustomFields(listId)
-            const customFields: Array<{ id: string; value: unknown }> = []
-            for (let i = 0; i < opts.field.length; i += 2) {
-              const fieldName = opts.field[i]!
-              const rawValue = opts.field[i + 1]!
-              const field = findFieldByName(fields, fieldName)
-              const value = await resolveTaskFieldValue(
-                client,
-                field,
-                parseFieldValue(field, rawValue),
-              )
-              customFields.push({ id: field.id, value })
-            }
-            opts.customFields = customFields
+            opts.customFields = await prepareFieldEntries(client, fields, opts.field)
           }
           const result = await createTask(config, opts)
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(result, null, 2))
           } else {
             console.log(formatCreateConfirmation(result.id, result.name, result.url))
+            if (result.applied) console.log(`Applied after template: ${result.applied.join(', ')}`)
           }
         },
       ),
@@ -1584,25 +1613,47 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
   program
     .command('field <taskId>')
     .description('Set or remove a custom field value on a task')
-    .option('--set <nameAndValue...>', 'Set field: --set "Field Name" value')
+    .option('--set <nameAndValue...>', 'Set field: --set "Field Name" value (name or field UUID)')
     .option(
       '--value-file <path>',
       'Read the field value from a file ("-" for stdin); use with --set "Field Name". Avoids shell quoting',
     )
-    .option('--remove <fieldName>', 'Remove field value by name')
+    .option('--address <text>', 'Formatted address for a location field: --set "Field" "lat,lng"')
+    .option(
+      '--add <nameAndValue...>',
+      'Add users, tasks or labels to a field: --add "Field Name" a,b',
+    )
+    .option(
+      '--remove-value <nameAndValue...>',
+      'Remove individual users, tasks or labels: --remove-value "Field Name" a,b',
+    )
+    .option('--remove <fieldName>', 'Remove the whole field value (field name or UUID)')
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
         async (
           taskId: string,
-          opts: { set?: string[]; valueFile?: string; remove?: string; json?: boolean },
+          opts: {
+            set?: string[]
+            valueFile?: string
+            address?: string
+            add?: string[]
+            removeValue?: string[]
+            remove?: string
+            json?: boolean
+          },
         ) => {
           const config = loadConfig(getProfileName())
-          const fieldOpts: { set?: [string, string]; remove?: string } = {}
+          const fieldOpts: Parameters<typeof setCustomField>[2] = {}
           if (opts.set) {
             fieldOpts.set = resolveFieldSet(opts.set, opts.valueFile)
           } else if (opts.valueFile !== undefined) {
             throw new Error('--value-file requires --set "Field Name"')
+          }
+          if (opts.address !== undefined) fieldOpts.address = opts.address
+          if (opts.add) fieldOpts.add = resolveFieldPair(opts.add, '--add')
+          if (opts.removeValue) {
+            fieldOpts.removeValue = resolveFieldPair(opts.removeValue, '--remove-value')
           }
           if (opts.remove) {
             fieldOpts.remove = opts.remove
@@ -1614,8 +1665,10 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
             for (const r of results) {
               if (r.action === 'set') {
                 console.log(`Set "${r.field}" to ${JSON.stringify(r.value)} on ${r.taskId}`)
-              } else {
+              } else if (r.action === 'removed') {
                 console.log(`Removed "${r.field}" from ${r.taskId}`)
+              } else {
+                console.log(`Updated "${r.field}" on ${r.taskId}: ${JSON.stringify(r.value)}`)
               }
             }
           }
@@ -2434,18 +2487,28 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
   bulkCmd
     .command('field <taskIds...>')
     .description('Bulk set the same custom field value on tasks')
-    .requiredOption('--set <nameAndValue...>', 'Set field: --set "Field Name" value')
+    .requiredOption(
+      '--set <nameAndValue...>',
+      'Set field: --set "Field Name" value (name or field UUID)',
+    )
     .option(
       '--value-file <path>',
       'Read the field value from a file ("-" for stdin); use with --set "Field Name"',
     )
+    .option('--address <text>', 'Formatted address for a location field: --set "Field" "lat,lng"')
     .option('--json', 'Force JSON output even in terminal')
     .action(
       wrapAction(
-        async (taskIds: string[], opts: { set: string[]; valueFile?: string; json?: boolean }) => {
+        async (
+          taskIds: string[],
+          opts: { set: string[]; valueFile?: string; address?: string; json?: boolean },
+        ) => {
           const [fieldName, fieldValue] = resolveFieldSet(opts.set, opts.valueFile)
           const config = loadConfig(getProfileName())
-          const result = await bulkField(config, fieldName, fieldValue, taskIds)
+          const result =
+            opts.address !== undefined
+              ? await bulkField(config, fieldName, fieldValue, taskIds, { address: opts.address })
+              : await bulkField(config, fieldName, fieldValue, taskIds)
           outputBulkResult(result, opts.json ?? false, `field "${fieldName}"`)
         },
       ),

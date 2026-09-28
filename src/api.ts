@@ -87,12 +87,18 @@ export interface UpdateTaskOptions {
   due_date_time?: boolean
   start_date?: number | null
   start_date_time?: boolean
-  time_estimate?: number
+  time_estimate?: number | null
+  points?: number | null
   assignees?: { add?: number[]; rem?: number[] }
   group_assignees?: { add?: string[]; rem?: string[] }
+  watchers?: { add?: number[]; rem?: number[] }
   parent?: string | null
   archived?: boolean
   custom_item_id?: number
+}
+
+export interface CustomFieldValueOptions {
+  time: boolean
 }
 
 export interface CreateTaskOptions {
@@ -107,11 +113,15 @@ export interface CreateTaskOptions {
   start_date?: number
   start_date_time?: boolean
   time_estimate?: number
+  points?: number
   assignees?: number[]
   group_assignees?: string[]
   tags?: string[]
   custom_item_id?: number
-  custom_fields?: Array<{ id: string; value: unknown }>
+  custom_fields?: Array<{ id: string; value: unknown; value_options?: CustomFieldValueOptions }>
+  links_to?: string
+  notify_all?: boolean
+  check_required_custom_fields?: boolean
 }
 
 interface Team {
@@ -1077,10 +1087,15 @@ export class ClickUpClient {
     })
   }
 
-  async setCustomFieldValue(taskId: string, fieldId: string, value: unknown): Promise<void> {
+  async setCustomFieldValue(
+    taskId: string,
+    fieldId: string,
+    value: unknown,
+    valueOptions?: CustomFieldValueOptions,
+  ): Promise<void> {
     await this.request(this.taskPath(taskId, `/field/${fieldId}`), {
       method: 'POST',
-      body: JSON.stringify({ value }),
+      body: JSON.stringify(valueOptions ? { value, value_options: valueOptions } : { value }),
     })
   }
 

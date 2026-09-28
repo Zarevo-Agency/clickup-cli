@@ -734,7 +734,7 @@ cup folders <spaceId> --json
 
 ### `cup update <id>`
 
-Update a task. Provide at least one of: `--name`, `--description`, `--status`, `--priority`, `--due-date`, `--start-date`, `--time-estimate`, `--assignee`, `--remove-assignee`, `--group-assignee`, `--remove-group-assignee`, `--parent`, `--archive`, `--unarchive`, `--type`, `--field`.
+Update a task. Provide at least one of: `--name`, `--description`, `--status`, `--priority`, `--due-date`, `--start-date`, `--time-estimate`, `--points`, `--assignee`, `--remove-assignee`, `--watcher`, `--remove-watcher`, `--group-assignee`, `--remove-group-assignee`, `--parent`, `--archive`, `--unarchive`, `--type`, `--field`.
 
 ```bash
 cup update abc123 -s "in progress"
@@ -749,10 +749,17 @@ cup update abc123 --due-date 2025-03-15T14:30:00+08:00  # explicit offset
 cup update abc123 --due-date none         # clear due date
 cup update abc123 --start-date 2025-03-01
 cup update abc123 --start-date 2025-03-01T09:00      # start date with time
+cup update abc123 --start-date none       # clear start date
+cup update abc123 --priority none         # clear priority
+cup update abc123 --time-estimate none    # clear time estimate
+cup update abc123 --points 3
+cup update abc123 --points none           # clear sprint points
 cup update abc123 --assignee me
 cup update abc123 --assignee 12345
+cup update abc123 --assignee 111,222 --assignee 333   # several assignees
 cup update abc123 --remove-assignee me
 cup update abc123 --assignee 99 --remove-assignee 12345
+cup update abc123 --watcher me --remove-watcher 12345
 cup update abc123 --group-assignee @mobile-team       # assign by handle (find IDs with `cup groups`)
 cup update abc123 --group-assignee mobile-team,backend  # multiple groups, comma-separated
 cup update abc123 --group-assignee 00000000-0000-0000-0000-000000000001  # assign by UUID
@@ -769,7 +776,9 @@ cup update abc123 --field "Priority" "High" --field "Tags" "bug"
 cup update abc123 -s "in progress" --json
 ```
 
-`--field "Name" value` updates a custom field inline as part of the update. Field names are resolved via the task's list using the same parser as `cup field --set` (text, number, checkbox, dropdown name, labels, date, url, email, etc.). Repeat the flag to set multiple fields.
+`--field "Name" value` updates a custom field inline as part of the update. Fields are resolved by name or UUID against the task's fields using the same parser as `cup field --set` (text, number, checkbox, dropdown name, labels, date, url, email, location, etc.). Repeat the flag to set multiple fields. All field names and values are validated before the task is changed.
+
+`none`/`clear` sends `null` for `--priority`, `--due-date`, `--start-date`, `--time-estimate` and `--points`. `--time-estimate 0` still sends `0`.
 
 | Flag                           | Description                                                                                           |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------- |
@@ -777,19 +786,22 @@ cup update abc123 -s "in progress" --json
 | `-d, --description <text>`     | New description (markdown supported). See "Multiline markdown" above for quoting                      |
 | `--description-file <path>`    | Read description from a file (`-` for stdin); avoids shell quoting. Mutually exclusive with `-d`      |
 | `-s, --status <status>`        | New status, supports fuzzy matching (e.g. `"prog"` matches `"in progress"`)                           |
-| `--priority <level>`           | Priority: `urgent`, `high`, `normal`, `low` (or 1-4)                                                  |
+| `--priority <level>`           | Priority: `urgent`, `high`, `normal`, `low` (or 1-4), or `"none"`/`"clear"` to remove                 |
 | `--due-date <date>`            | Due date (`YYYY-MM-DD`, `YYYY-MM-DDTHH:MM`, or ISO 8601 with offset), or `"none"`/`"clear"` to remove |
-| `--start-date <date>`          | Start date (`YYYY-MM-DD`, `YYYY-MM-DDTHH:MM`, or ISO 8601 with offset)                                |
-| `--time-estimate <duration>`   | Time estimate (e.g. `"2h"`, `"30m"`, `"1h30m"`)                                                       |
-| `--assignee <userId>`          | Add assignee by user ID or `"me"`                                                                     |
-| `--remove-assignee <userId>`   | Remove assignee by user ID or `"me"`                                                                  |
+| `--start-date <date>`          | Start date (same formats as `--due-date`), or `"none"`/`"clear"` to remove                            |
+| `--time-estimate <duration>`   | Time estimate (e.g. `"2h"`, `"30m"`, `"1h30m"`), or `"none"`/`"clear"` to remove                      |
+| `--points <n>`                 | Sprint points, or `"none"`/`"clear"` to remove                                                        |
+| `--assignee <userId>`          | Add assignee by user ID or `"me"` (repeatable or comma-separated)                                     |
+| `--remove-assignee <userId>`   | Remove assignee by user ID or `"me"` (repeatable or comma-separated)                                  |
+| `--watcher <userId>`           | Add watcher by user ID or `"me"` (repeatable or comma-separated)                                      |
+| `--remove-watcher <userId>`    | Remove watcher by user ID or `"me"` (repeatable or comma-separated)                                   |
 | `--group-assignee <id>`        | Add group assignee by UUID or `@handle` (repeatable or comma-separated; find IDs with `cup groups`)   |
 | `--remove-group-assignee <id>` | Remove group assignee by UUID or `@handle` (repeatable or comma-separated)                            |
 | `--parent <taskId>`            | Set parent task (makes this a subtask)                                                                |
 | `--archive`                    | Archive the task                                                                                      |
 | `--unarchive`                  | Unarchive the task                                                                                    |
 | `--type <type>`                | Change task type (name or custom_item_id)                                                             |
-| `--field <name> <value>`       | Set custom field inline (repeatable; resolves field names via the task's list)                        |
+| `--field <name> <value>`       | Set custom field inline by name or UUID (repeatable)                                                  |
 | `--json`                       | Force JSON output even in terminal                                                                    |
 
 ### `cup create`
@@ -805,19 +817,27 @@ cup create -n "Task" -l <listId> --priority high --due-date 2025-06-01
 cup create -n "Task" -l <listId> --due-date 2025-06-01T10:00        # date + time
 cup create -n "Task" -l <listId> --due-date 2025-06-01T10:00:00Z    # UTC
 cup create -n "Task" -l <listId> --assignee me --tags "bug,frontend"
+cup create -n "Task" -l <listId> --assignee 111,222 --assignee me   # several assignees
+cup create -n "Task" -l <listId> --points 3
+cup create -n "Follow-up" -l <listId> --links-to abc123           # link to an existing task
+cup create -n "Task" -l <listId> --field "Region" "EU" --check-required-fields
+cup create -n "Task" -l <listId> --assignee 111 --notify-all
 cup create -n "Task" -l <listId> --group-assignee @mobile-team             # assign group by handle
 cup create -n "Task" -l <listId> --group-assignee mobile-team,backend     # multiple groups
 cup create -n "Initiative" -l <listId> --custom-item-id 1
 cup create -n "Task" -l <listId> --time-estimate 2h
 cup create -n "Bug fix" -l <listId> --field "Story Points" 5 --field "Stage" "In Review"
 cup create -n "From Template" -l <listId> --template <templateId>
+cup create -n "From Template" -l <listId> --template "Bug Report" -s "in progress" --priority high --tags bug
 cup create -n "Bug fix" -l sprint:current         # create in active sprint
 cup create -n "Fix bug" -l <listId> --json
 ```
 
 `sprint:current` is a pseudo-ID that auto-resolves to the active sprint list using the same detection chain as `cup sprint` (`--folder` flag > `sprintFolderId` config > favorited sprint-folders > auto-detection).
 
-`--field "Name" value` sets custom fields inline as part of task creation. Field names are resolved once against the target list via `GET /list/{id}/field`, so the values land in the initial create payload instead of requiring a follow-up `cup field --set` call. Repeat the flag to set multiple fields. Value parsing matches `cup field --set` (text, number, checkbox, dropdown name, labels, date, url, email, etc.).
+`--field "Name" value` sets custom fields inline as part of task creation. Fields are resolved by name or UUID once against the target list via `GET /list/{id}/field`, so the values land in the initial create payload instead of requiring a follow-up `cup field --set` call. Repeat the flag to set multiple fields. Value parsing matches `cup field --set` (text, number, checkbox, dropdown name, labels, date, url, email, location, etc.).
+
+`--template` takes a template ID or name. The template endpoint only accepts a name, so the other flags (status, priority, dates, time estimate, points, assignees, group assignees, description, parent, custom item ID, tags, fields, `--links-to`) are applied right after the task is created, and the confirmation lists them (`applied` in JSON). Everything is validated before the task is created, including the status against the list. `--notify-all` and `--check-required-fields` have no follow-up call and fail with `--template`. If a follow-up call fails, the error names the created task and what was already applied.
 
 | Flag                         | Required         | Description                                                                          |
 | ---------------------------- | ---------------- | ------------------------------------------------------------------------------------ |
@@ -831,12 +851,16 @@ cup create -n "Fix bug" -l <listId> --json
 | `--due-date <date>`          | no               | Due date (`YYYY-MM-DD`, `YYYY-MM-DDTHH:MM`, or ISO 8601 with offset)                 |
 | `--start-date <date>`        | no               | Start date (`YYYY-MM-DD`, `YYYY-MM-DDTHH:MM`, or ISO 8601 with offset)               |
 | `--time-estimate <duration>` | no               | Time estimate (e.g. `"2h"`, `"30m"`, `"1h30m"`)                                      |
-| `--assignee <userId>`        | no               | Assignee by user ID or `"me"`                                                        |
+| `--points <n>`               | no               | Sprint points                                                                        |
+| `--assignee <userId>`        | no               | Assignee by user ID or `"me"` (repeatable or comma-separated)                        |
 | `--group-assignee <ids>`     | no               | Group assignees by UUID or `@handle` (comma-separated; find IDs with `cup groups`)   |
 | `--tags <tags>`              | no               | Comma-separated tag names                                                            |
 | `--custom-item-id <id>`      | no               | Custom task type ID (e.g. for creating initiatives)                                  |
-| `--template <id>`            | no               | Create from a task template (use `cup templates` to find IDs)                        |
-| `--field <name> <value>`     | no               | Set custom field inline (repeatable)                                                 |
+| `--links-to <taskId>`        | no               | Link the new task to this task (native id, custom id, or URL)                        |
+| `--notify-all`               | no               | Also notify the task creator (assignees and watchers are always notified)            |
+| `--check-required-fields`    | no               | Fail if required custom fields are missing (ClickUp ignores them by default)         |
+| `--template <idOrName>`      | no               | Create from a task template by ID or name (`cup templates`); other flags follow      |
+| `--field <name> <value>`     | no               | Set custom field inline by name or UUID (repeatable)                                 |
 | `--json`                     | no               | Force JSON output even in terminal                                                   |
 
 ### `cup delete <id>`
@@ -909,7 +933,7 @@ In TTY mode without `--confirm`: shows the space name and prompts for confirmati
 
 ### `cup field <id>`
 
-Set or remove a custom field value. Field names are resolved case-insensitively; errors list available fields/options.
+Set or remove a custom field value. Fields are selected by UUID or by name (case-insensitive); errors list available fields/options. All inputs are validated before the first write.
 
 ```bash
 cup field abc123 --set "Priority Level" high
@@ -917,6 +941,10 @@ cup field abc123 --set "Story Points" 5
 cup field abc123 --set "Approved" true
 cup field abc123 --set "Category" "Bug Fix"
 cup field abc123 --set "Due" 2025-06-01
+cup field abc123 --set "Due" 2025-06-01T14:30          # with time (user's timezone, time is shown)
+cup field abc123 --set 00000000-0000-0000-0000-00000000000a 5   # field by UUID
+cup field abc123 --set "Site" "52.52,13.405" --address "Example Street 1, Berlin"
+cup field abc123 --set "Site" '{"location":{"lat":52.52,"lng":13.405},"formatted_address":"Berlin"}'
 cup field abc123 --set "Website" "https://example.com"
 cup field abc123 --set "Contact" "user@example.com"
 cup field abc123 --set "Priority Labels" "High, Medium"
@@ -924,6 +952,11 @@ cup field abc123 --set "Rating" 3
 cup field abc123 --set "Progress" 75
 cup field abc123 --set "Related Tasks" "task1, task2"
 cup field abc123 --set "Reviewers" "123, 456"
+cup field abc123 --add "Reviewers" "me, 789"              # add people
+cup field abc123 --remove-value "Reviewers" 123           # remove one person
+cup field abc123 --remove-value "Related Tasks" task2     # remove one related task
+cup field abc123 --add "Priority Labels" "Low"            # keep existing labels, add Low
+cup field abc123 --remove-value "Priority Labels" "High"  # drop one label
 cup field abc123 --remove "Priority Level"
 cup field abc123 --set "Points" 3 --remove "Old Field"
 cup field abc123 --set "Points" 3 --json
@@ -937,14 +970,19 @@ cup field abc123 --set "Standup 4 - 6/25" --value-file /tmp/note.md
 cup field abc123 --set "Standup 4 - 6/25" --value-file -   # stdin
 ```
 
-| Flag                       | Description                                                                                                                                                                                                                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--set "Field Name" <val>` | Set a custom field by name. Supports: text, number, checkbox (true/false), dropdown (option name), labels (comma-separated names), date (YYYY-MM-DD), url, email, emoji/rating (0-5), manual_progress (0-100), tasks/relationship (comma-separated task IDs), users/people (comma-separated user IDs) |
-| `--value-file <path>`      | Read the field value from a file (`-` for stdin). Use with `--set "Field Name"`; mutually exclusive with an inline value                                                                                                                                                                              |
-| `--remove "Field Name"`    | Remove a custom field value                                                                                                                                                                                                                                                                           |
-| `--json`                   | Force JSON output                                                                                                                                                                                                                                                                                     |
+| Flag                                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--set "Field Name" <val>`             | Set a custom field by name or UUID. Supports: text, number, checkbox (true/false), dropdown (option name), labels (comma-separated names), date (`YYYY-MM-DD`; with `THH:MM` or an ISO offset the time is stored and shown), url, email, emoji/rating (0-5), manual_progress (0-100), tasks/relationship (comma-separated task IDs), users/people (comma-separated user IDs or `me`), location (`"lat,lng"` or JSON with `location` and `formatted_address`) |
+| `--value-file <path>`                  | Read the field value from a file (`-` for stdin). Use with `--set "Field Name"`; mutually exclusive with an inline value                                                                                                                                                                                                                                                                                                                                     |
+| `--address <text>`                     | Formatted address for a location field set with `--set "Field" "lat,lng"`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `--add "Field Name" <values>`          | Add users, related tasks or labels (comma-separated) and keep the others                                                                                                                                                                                                                                                                                                                                                                                     |
+| `--remove-value "Field Name" <values>` | Remove individual users, related tasks or labels (comma-separated); removing the last label clears the field                                                                                                                                                                                                                                                                                                                                                 |
+| `--remove "Field Name"`                | Remove the whole custom field value                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `--json`                               | Force JSON output                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
-Both `--set` and `--remove` can be used together in one invocation.
+`--set`, `--add`, `--remove-value` and `--remove` can be combined in one invocation; they run in that order.
+
+Files (attachment) fields cannot be set with `cup field`, `--field` or `cup bulk field`. Upload the file with `cup api` to the v3 endpoint `POST /api/v3/workspaces/{workspace_id}/custom_fields/{field_id}/attachments`, then set the field with `POST /v2/task/{task_id}/field/{field_id}` and body `{"value":{"add":["<attachment id>"]}}`.
 
 ### `cup field-create <name>`
 
@@ -1726,7 +1764,7 @@ cup bulk priority t1 t2 t3 --to low --json
 
 ### `cup bulk field <taskIds...>`
 
-Bulk set the same custom field value on multiple tasks. Resolves the field name against the first task in the list, then applies the parsed value to every task in parallel (up to 5 at a time). Uses the same value parsing as `cup field --set` (text, number, checkbox, dropdown name, labels, date, url, email, etc.). Failed updates are reported but don't stop the operation.
+Bulk set the same custom field value on multiple tasks. Resolves the field name or UUID against the first task in the list, then applies the parsed value to every task in parallel (up to 5 at a time). Uses the same value parsing as `cup field --set` (text, number, checkbox, dropdown name, labels, date, url, email, location, etc.). Failed updates are reported but don't stop the operation.
 
 ```bash
 cup bulk field t1 t2 t3 --set "Story Points" 5
@@ -1734,10 +1772,12 @@ cup bulk field t1 t2 --set "Stage" "In Review"
 cup bulk field t1 t2 t3 --set "Notes" "batch update" --json
 ```
 
-| Flag                   | Required | Description                 |
-| ---------------------- | -------- | --------------------------- |
-| `--set <name> <value>` | yes      | Field name and value to set |
-| `--json`               | no       | Force JSON output           |
+| Flag                   | Required | Description                                                 |
+| ---------------------- | -------- | ----------------------------------------------------------- |
+| `--set <name> <value>` | yes      | Field name or UUID and value to set                         |
+| `--value-file <path>`  | no       | Read the value from a file (`-` for stdin)                  |
+| `--address <text>`     | no       | Formatted address for a location field set with `"lat,lng"` |
+| `--json`               | no       | Force JSON output                                           |
 
 ### `cup bulk move <taskIds...>`
 

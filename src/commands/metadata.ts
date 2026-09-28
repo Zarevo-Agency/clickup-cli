@@ -119,8 +119,11 @@ export const commandMetadata = [
       '--due-date',
       '--start-date',
       '--time-estimate',
+      '--points',
       '--assignee',
       '--remove-assignee',
+      '--watcher',
+      '--remove-watcher',
       '--group-assignee',
       '--remove-group-assignee',
       '--parent',
@@ -154,6 +157,10 @@ export const commandMetadata = [
       '--tags',
       '--custom-item-id',
       '--time-estimate',
+      '--points',
+      '--links-to',
+      '--notify-all',
+      '--check-required-fields',
       '--template',
       '--field',
       '--json',
@@ -416,7 +423,7 @@ export const commandMetadata = [
   {
     name: 'field',
     description: 'Set or remove a custom field value on a task',
-    flags: ['--set', '--value-file', '--remove', '--json'],
+    flags: ['--set', '--value-file', '--address', '--add', '--remove-value', '--remove', '--json'],
     quickReference: [
       {
         section: 'write',
