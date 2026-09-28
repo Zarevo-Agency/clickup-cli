@@ -293,8 +293,6 @@ export interface TimeEntryUpdate {
   end?: number
   tid?: string
   billable?: boolean
-  tags?: TimeEntryTag[]
-  tag_action?: 'add' | 'remove'
 }
 
 export interface TimeInStatusEntry {
@@ -1519,12 +1517,43 @@ export class ClickUpClient {
   ): Promise<TimeEntry> {
     const body = updates.tid ? { ...updates, tid: normalizeTaskId(updates.tid) } : updates
     const query = updates.tid ? this.customIdQueryParams(updates.tid) : ''
-    const data = await this.request<{ data: TimeEntry | null }>(
+    const data = await this.request<{ data: TimeEntry | TimeEntry[] | null }>(
       `/team/${teamId}/time_entries/${timeEntryId}${query}`,
       { method: 'PUT', body: JSON.stringify(body) },
     )
+    const entry = Array.isArray(data.data) ? data.data[0] : data.data
+    if (entry == null) throw new Error(`Time entry ${timeEntryId} not found`)
+    return entry
+  }
+
+  async getTimeEntry(teamId: string, timeEntryId: string): Promise<TimeEntry> {
+    const data = await this.request<{ data: TimeEntry | null }>(
+      `/team/${teamId}/time_entries/${timeEntryId}`,
+    )
     if (data.data == null) throw new Error(`Time entry ${timeEntryId} not found`)
     return data.data
+  }
+
+  async addTimeEntryTags(
+    teamId: string,
+    timeEntryIds: string[],
+    tags: TimeEntryTag[],
+  ): Promise<void> {
+    await this.request(`/team/${teamId}/time_entries/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ time_entry_ids: timeEntryIds, tags }),
+    })
+  }
+
+  async removeTimeEntryTags(
+    teamId: string,
+    timeEntryIds: string[],
+    names: string[],
+  ): Promise<void> {
+    await this.request(`/team/${teamId}/time_entries/tags`, {
+      method: 'DELETE',
+      body: JSON.stringify({ time_entry_ids: timeEntryIds, tags: names.map(name => ({ name })) }),
+    })
   }
 
   async getTimeEntryTags(

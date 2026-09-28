@@ -293,11 +293,6 @@ export async function updateTimeEntry(
       'Provide at least one of: --description, --duration, --start, --end, --task, --billable, --not-billable, --tag-add, --tag-remove',
     )
   }
-  if (tagAdd.length > 0 && tagRemove.length > 0) {
-    throw new Error(
-      '--tag-add and --tag-remove cannot be combined (ClickUp allows one tag action per update); run two updates',
-    )
-  }
   if (hasStart && hasEnd && hasDuration) {
     throw new Error('Provide at most two of --start, --end, --duration')
   }
@@ -325,12 +320,19 @@ export async function updateTimeEntry(
   }
   if (opts.taskId !== undefined) updates.tid = opts.taskId
   if (opts.billable !== undefined) updates.billable = opts.billable
-  const tagNames = tagAdd.length > 0 ? tagAdd : tagRemove
-  if (tagNames.length > 0) {
-    updates.tags = await resolveTimeEntryTags(client, config.teamId, tagNames)
-    updates.tag_action = tagAdd.length > 0 ? 'add' : 'remove'
+  if (Object.keys(updates).length > 0) {
+    await client.updateTimeEntry(config.teamId, timeEntryId, updates)
   }
-  return client.updateTimeEntry(config.teamId, timeEntryId, updates)
+  if (tagAdd.length > 0 || tagRemove.length > 0) {
+    const tags = await resolveTimeEntryTags(client, config.teamId, [...tagAdd, ...tagRemove])
+    const toAdd = tags.slice(0, tagAdd.length)
+    const toRemove = tags.slice(tagAdd.length).map(tag => tag.name)
+    if (toAdd.length > 0) await client.addTimeEntryTags(config.teamId, [timeEntryId], toAdd)
+    if (toRemove.length > 0) {
+      await client.removeTimeEntryTags(config.teamId, [timeEntryId], toRemove)
+    }
+  }
+  return client.getTimeEntry(config.teamId, timeEntryId)
 }
 
 export async function deleteTimeEntry(config: Config, timeEntryId: string): Promise<void> {

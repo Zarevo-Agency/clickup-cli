@@ -1369,6 +1369,33 @@ describe('time tracking API methods', () => {
     expect(String(mockFetch.mock.calls[0]![0])).toContain('/team/team1/time_entries/tags')
   })
 
+  it('adds and removes time entry tags via the tags endpoint', async () => {
+    mockFetch.mockReturnValue(mockResponse({}))
+    const tag = { name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }
+    await client.addTimeEntryTags('team1', ['te1'], [tag])
+    await client.removeTimeEntryTags('team1', ['te1'], ['Consulting'])
+    const [addUrl, addInit] = mockFetch.mock.calls[0]! as [string, RequestInit]
+    const [removeUrl, removeInit] = mockFetch.mock.calls[1]! as [string, RequestInit]
+    expect(addUrl).toContain('/team/team1/time_entries/tags')
+    expect(addInit).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ time_entry_ids: ['te1'], tags: [tag] }),
+    })
+    expect(removeUrl).toContain('/team/team1/time_entries/tags')
+    expect(removeInit).toMatchObject({
+      method: 'DELETE',
+      body: JSON.stringify({ time_entry_ids: ['te1'], tags: [{ name: 'Consulting' }] }),
+    })
+  })
+
+  it('updateTimeEntry unwraps the one-element array ClickUp returns', async () => {
+    const entry = { id: 'te1', duration: 60000 }
+    mockFetch.mockReturnValue(mockResponse({ data: [entry] }))
+    await expect(client.updateTimeEntry('team1', 'te1', { duration: 60000 })).resolves.toEqual(
+      entry,
+    )
+  })
+
   it('deleteTimeEntry sends DELETE to /team/{teamId}/time_entries/{id}', async () => {
     mockFetch.mockReturnValue(mockResponse({}))
     await client.deleteTimeEntry('team1', 'te1')

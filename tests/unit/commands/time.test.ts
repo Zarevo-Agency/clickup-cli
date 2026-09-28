@@ -7,6 +7,9 @@ const mockCreateTimeEntry = vi.fn()
 const mockGetTimeEntries = vi.fn()
 const mockUpdateTimeEntry = vi.fn()
 const mockDeleteTimeEntry = vi.fn()
+const mockGetTimeEntry = vi.fn()
+const mockAddTimeEntryTags = vi.fn()
+const mockRemoveTimeEntryTags = vi.fn()
 const mockGetMe = vi.fn().mockResolvedValue({ id: 42, username: 'testuser' })
 const mockGetUserTimezone = vi.fn().mockResolvedValue('Europe/Berlin')
 const mockGetTimeEntryTags = vi
@@ -24,6 +27,9 @@ vi.mock('../../../src/api.js', () => ({
       getTimeEntries: mockGetTimeEntries,
       updateTimeEntry: mockUpdateTimeEntry,
       deleteTimeEntry: mockDeleteTimeEntry,
+      getTimeEntry: mockGetTimeEntry,
+      addTimeEntryTags: mockAddTimeEntryTags,
+      removeTimeEntryTags: mockRemoveTimeEntryTags,
       getMe: mockGetMe,
       getUserTimezone: mockGetUserTimezone,
       getTimeEntryTags: mockGetTimeEntryTags,
@@ -465,12 +471,14 @@ describe('updateTimeEntry', () => {
     vi.clearAllMocks()
   })
 
-  it('updates description', async () => {
+  it('updates description and returns the read-back entry', async () => {
     mockUpdateTimeEntry.mockResolvedValue(baseEntry)
+    mockGetTimeEntry.mockResolvedValue({ ...baseEntry, description: 'new desc' })
     const { updateTimeEntry } = await import('../../../src/commands/time.js')
     const result = await updateTimeEntry(config, 'te1', { description: 'new desc' })
-    expect(result).toEqual(baseEntry)
+    expect(result.description).toBe('new desc')
     expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', { description: 'new desc' })
+    expect(mockGetTimeEntry).toHaveBeenCalledWith('tm_1', 'te1')
   })
 
   it('updates duration', async () => {
@@ -514,7 +522,7 @@ describe('updateTimeEntry', () => {
     expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', expected)
   })
 
-  it('sends task, billable and added tags', async () => {
+  it('sends task and billable via PUT and added tags via the tags endpoint', async () => {
     mockUpdateTimeEntry.mockResolvedValue(baseEntry)
     const { updateTimeEntry } = await import('../../../src/commands/time.js')
     await updateTimeEntry(config, 'te1', {
@@ -526,23 +534,27 @@ describe('updateTimeEntry', () => {
     expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', {
       tid: 'PROJ-7',
       billable: false,
-      tags: [{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }],
-      tag_action: 'add',
     })
+    expect(mockAddTimeEntryTags).toHaveBeenCalledWith(
+      'tm_1',
+      ['te1'],
+      [{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }],
+    )
   })
 
-  it('uses tag_action remove for --tag-remove', async () => {
-    mockUpdateTimeEntry.mockResolvedValue(baseEntry)
+  it('changes only tags without a PUT, adding and removing in one call', async () => {
     const { updateTimeEntry } = await import('../../../src/commands/time.js')
-    await updateTimeEntry(config, 'te1', { tagRemove: ['Consulting'] })
-    expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', {
-      tags: [{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }],
-      tag_action: 'remove',
-    })
+    await updateTimeEntry(config, 'te1', { tagAdd: ['new-tag'], tagRemove: ['consulting'] })
+    expect(mockUpdateTimeEntry).not.toHaveBeenCalled()
+    expect(mockAddTimeEntryTags).toHaveBeenCalledWith(
+      'tm_1',
+      ['te1'],
+      [expect.objectContaining({ name: 'new-tag' })],
+    )
+    expect(mockRemoveTimeEntryTags).toHaveBeenCalledWith('tm_1', ['te1'], ['Consulting'])
   })
 
   it.each([
-    [{ tagAdd: ['a'], tagRemove: ['b'] }, '--tag-add and --tag-remove cannot be combined'],
     [{ start: '2026-09-01T09:00' }, '--start and --end must be given together'],
     [{ end: '2026-09-01T09:00' }, '--start and --end must be given together'],
     [

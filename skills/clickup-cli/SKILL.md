@@ -208,7 +208,7 @@ Prefer a dedicated command. For anything they don't cover, use `cup api` (see Ra
 | `cup time status` | Show running timer |
 | `cup time log <taskId> <duration> [-d desc] [--start datetime] [--assignee id\|me] [--billable\|--not-billable] [--tag name]` | Log manual entry (e.g. "2h", "30m"); default start = now minus duration |
 | `cup time list [--days n \| --start date [--end date]] [--task\|--list\|--folder\|--space id] [--assignee ids\|me \| --all] [--billable\|--not-billable] [--include-task-tags] [--include-location-names]` | List my time entries (--all for team); dates in user timezone, date-only `--end` is inclusive; one location filter at a time; JSON includes `billable` and `tags` |
-| `cup time update <timeEntryId> [-d desc] [--duration dur] [--start dt] [--end dt] [--task id] [--billable\|--not-billable] [--tag-add name \| --tag-remove name]` | Update time entry; `--start`/`--end` need each other or `--duration`; one tag action per call; unknown ID is an error |
+| `cup time update <timeEntryId> [-d desc] [--duration dur] [--start dt] [--end dt] [--task id] [--billable\|--not-billable] [--tag-add name] [--tag-remove name]` | Update time entry and print the read-back entry; `--start`/`--end` need each other or `--duration`; unknown ID is an error |
 | `cup time delete <timeEntryId>` | Delete time entry; unknown ID is an error |
 | `cup goal-create <name> [-d desc] [--color hex]` | Create a goal |
 | `cup goal-update <goalId> [-n name] [-d desc] [--color hex]` | Update a goal |

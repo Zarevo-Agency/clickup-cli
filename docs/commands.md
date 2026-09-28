@@ -1433,7 +1433,7 @@ cup time list --days 7 --json
 
 Update a time entry. Provide at least one flag besides `--json`. An unknown ID fails with "Time entry <id> not found" (exit code 1).
 
-ClickUp needs start and end together: pass `--start` and `--end`, or one of them with `--duration` (the other bound is computed). ClickUp allows one tag action per request, so `--tag-add` and `--tag-remove` cannot be combined. Tag names are matched against existing time entry tags like in `cup time log`.
+ClickUp needs start and end together: pass `--start` and `--end`, or one of them with `--duration` (the other bound is computed). Tag changes go through ClickUp's time entry tags endpoint, so `--tag-add` and `--tag-remove` can be combined, also without other changes. Tag names are matched against existing time entry tags like in `cup time log`. The command reads the entry back and prints it.
 
 ```bash
 cup time update te123 -d "Updated description"
