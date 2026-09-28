@@ -1185,6 +1185,41 @@ export const commandMetadata = [
     ],
   },
   {
+    name: 'api',
+    description: 'Raw request to any ClickUp API endpoint; find endpoints with "api ops"',
+    flags: [
+      '-q',
+      '--query',
+      '-d',
+      '--data',
+      '--data-file',
+      '-F',
+      '--form',
+      '--paginate',
+      '--max-pages',
+      '--dry-run',
+      '--confirm',
+      '--json',
+    ],
+    quickReference: [
+      {
+        section: 'read',
+        usage: 'api ops [query...]',
+        description: 'Search ClickUp API endpoints (bundled official spec)',
+      },
+      {
+        section: 'read',
+        usage: 'api op <operationId>',
+        description: 'Show params, body schema and example of an endpoint',
+      },
+      {
+        section: 'write',
+        usage: 'api <method> <path>',
+        description: 'Raw request to any endpoint (no cup safety checks)',
+      },
+    ],
+  },
+  {
     name: 'merge',
     description: 'Merge a task into another (source becomes subtask of target)',
     flags: ['--confirm', '--json'],

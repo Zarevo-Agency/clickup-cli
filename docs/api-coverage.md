@@ -220,6 +220,16 @@ Status: :white_check_mark: implemented | :construction: planned | :no_entry_sign
 | Update webhook | `cup webhook update <id>` | :white_check_mark: |
 | Delete webhook | `cup webhook delete <id>` | :white_check_mark: |
 
+## Raw API Access
+
+Every endpoint in the official v2 and v3 specs (173 operations) is reachable, including the ones listed under "Won't add" below. Prefer dedicated commands where they exist.
+
+| Feature                      | Command                    | Status             |
+| ---------------------------- | -------------------------- | ------------------ |
+| Raw request to any endpoint  | `cup api <method> <path>`  | :white_check_mark: |
+| Search endpoints in the spec | `cup api ops [query...]`   | :white_check_mark: |
+| Endpoint params and schema   | `cup api op <operationId>` | :white_check_mark: |
+
 ## Won't add
 
 | Feature               | Why                                                                         |
