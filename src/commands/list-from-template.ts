@@ -1,7 +1,14 @@
 import { ClickUpClient } from '../api.js'
 import type { Config } from '../config.js'
+import type { TemplateOptionFlags } from './template-options.js'
+import {
+  buildTemplateOptions,
+  explainTemplateTimeout,
+  resolveTemplateRef,
+  resolveTemplateSpace,
+} from './template-options.js'
 
-interface ListFromTemplateOptions {
+interface ListFromTemplateOptions extends TemplateOptionFlags {
   space?: string
   folder?: string
 }
@@ -20,7 +27,22 @@ export async function createListFromTemplate(
   }
 
   const client = new ClickUpClient(config)
+  const options = await buildTemplateOptions('list', opts, () => client.getUserTimezone())
   const containerType = opts.folder ? 'folder' : 'space'
-  const containerId = (opts.folder ?? opts.space)!
-  return client.createListFromTemplate(containerId, opts.template, name, containerType)
+  const containerId =
+    opts.folder ?? (await resolveTemplateSpace(client, config.teamId, opts.space!))
+  const templateId = await resolveTemplateRef(opts.template, 'list', () =>
+    client.getListTemplates(config.teamId),
+  )
+  try {
+    return await client.createListFromTemplate(
+      containerId,
+      templateId,
+      name,
+      containerType,
+      options,
+    )
+  } catch (err) {
+    throw explainTemplateTimeout(err, `list "${name}"`)
+  }
 }

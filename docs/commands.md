@@ -247,6 +247,7 @@ cup task https://app.clickup.com/t/9017679539/DEV-2760   # same as: cup task DEV
 | `cup key-result-update <keyResultId>`                    | Update a key result                                                         |
 | `cup key-result-delete <keyResultId>`                    | Delete a key result                                                         |
 | `cup list-from-template <name>`                          | Create a list from a template                                               |
+| `cup folder-from-template <name>`                        | Create a folder from a template                                             |
 | `cup view-create <listId> <name>`                        | Create a view on a list                                                     |
 | `cup view-update <viewId>`                               | Update a view                                                               |
 | `cup view-delete <viewId>`                               | Delete a view                                                               |
@@ -1662,7 +1663,7 @@ cup task-types --json
 
 ### `cup templates`
 
-List task templates in your workspace. Useful for discovering template IDs for `cup create --template`.
+List task templates in your workspace (all pages). Useful for discovering template IDs for `cup create --template`.
 
 ```bash
 cup templates
@@ -2027,20 +2028,57 @@ cup folder-templates --json
 
 ### `cup list-from-template <name>`
 
-Create a list from a list template. Specify where to create the list with `--space` or `--folder`.
+Create a list from a list template. Specify where to create the list with `--space` or `--folder`. `--template` takes a template ID (`t-...`) or the exact template name (case-insensitive); `--space` takes a space ID or the exact space name. Template options work as for [`cup folder-from-template`](#cup-folder-from-template-name).
 
 ```bash
 cup list-from-template "Sprint Board" --template <id> --space <spaceId>
-cup list-from-template "Backlog" --template <id> --folder <folderId>
+cup list-from-template "Backlog" --template "Backlog Template" --folder <folderId>
+cup list-from-template "Sprint 12" --template <id> --folder <folderId> --start-date 2026-10-05 --option old_start_date=true
 cup list-from-template "Tasks" --template <id> --space <spaceId> --json
 ```
 
-| Flag                  | Required | Description                                  |
-| --------------------- | -------- | -------------------------------------------- |
-| `--template <id>`     | yes      | Template ID (find with `cup list-templates`) |
-| `--space <spaceId>`   | one of   | Create the list in this space                |
-| `--folder <folderId>` | one of   | Create the list in this folder               |
-| `--json`              | no       | Force JSON output                            |
+| Flag                      | Required | Description                                                                  |
+| ------------------------- | -------- | ---------------------------------------------------------------------------- |
+| `--template <idOrName>`   | yes      | Template ID or exact name (find with `cup list-templates`)                   |
+| `--space <spaceIdOrName>` | one of   | Create the list in this space                                                |
+| `--folder <folderId>`     | one of   | Create the list in this folder                                               |
+| `--option <key=value>`    | no       | Template option, repeatable (see below)                                      |
+| `--start-date <date>`     | no       | Project start date for remapping task dates (same as `--option start_date=`) |
+| `--due-date <date>`       | no       | Project due date for remapping task dates (same as `--option due_date=`)     |
+| `--json`                  | no       | Force JSON output (the API response: `id`, plus `list` when returned)        |
+
+### `cup folder-from-template <name>`
+
+Create a folder from a folder template, e.g. one folder per client with its lists, tasks and views. After creating, the command reads back the folder's lists and prints them.
+
+```bash
+cup folder-from-template "Acme" --space "Clients" --template "Client Onboarding"
+cup folder-from-template "Acme" --space <spaceId> --template <id> --due-date 2026-12-31 --option old_due_date=true --option skip_weekends=true
+cup folder-from-template "Acme" --space <spaceId> --template <id> --option return_immediately=false --json
+```
+
+| Flag                      | Required | Description                                                                  |
+| ------------------------- | -------- | ---------------------------------------------------------------------------- |
+| `--space <spaceIdOrName>` | yes      | Space ID or exact space name                                                 |
+| `--template <idOrName>`   | yes      | Template ID (`t-...`) or exact name (find with `cup folder-templates`)       |
+| `--option <key=value>`    | no       | Template option, repeatable (see below)                                      |
+| `--start-date <date>`     | no       | Project start date for remapping task dates (same as `--option start_date=`) |
+| `--due-date <date>`       | no       | Project due date for remapping task dates (same as `--option due_date=`)     |
+| `--json`                  | no       | Force JSON output                                                            |
+
+JSON output: `{ id, name, spaceId, templateId, lists: [{ id, name }], returnedImmediately }`.
+
+**Template options.** `--option` accepts every key of the API's `options` object and checks the value type before anything is created. Unknown keys, wrong types and duplicates fail. Options you don't set are not sent, so ClickUp's defaults apply; without any option the request carries only the name.
+
+| Type           | Keys                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `true`/`false` | `return_immediately`, `automation`, `include_views`, `old_due_date`, `old_start_date`, `old_followers`, `comment_attachments`, `recur_settings`, `old_tags`, `old_statuses`, `subtasks`, `custom_type`, `old_assignees`, `attachments`, `comment`, `old_status`, `external_dependencies`, `internal_dependencies`, `priority`, `custom_fields`, `old_checklists`, `relationships`, `old_subtask_assignees`, `remap_start_date`, `skip_weekends`, `time_estimate` (folders) |
+| number         | `time_estimate` (lists)                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `1` or `2`     | `archived`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| date           | `start_date`, `due_date` (YYYY-MM-DD or YYYY-MM-DDTHH:MM in your ClickUp timezone, or ISO 8601 with offset; sent as ISO date-time)                                                                                                                                                                                                                                                                                                                                         |
+| text           | `content` (description)                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+**`return_immediately`.** The CLI leaves ClickUp's default (`true`): ClickUp returns the new ID right away and keeps applying the template's lists and tasks in the background, so the folder output may not show every list yet. Re-check with `cup folders <spaceId>`. Pass `--option return_immediately=false` for small templates when everything must exist when the command returns. The CLI gives up waiting after 30 seconds; ClickUp then keeps applying the template, so check before retrying to avoid a duplicate. Writes are never retried automatically.
 
 ### `cup views <id>`
 

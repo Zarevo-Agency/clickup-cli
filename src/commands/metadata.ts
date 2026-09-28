@@ -1054,12 +1054,32 @@ export const commandMetadata = [
   {
     name: 'list-from-template',
     description: 'Create a list from a list template',
-    flags: ['--template', '--space', '--folder', '--json'],
+    flags: [
+      '--template',
+      '--space',
+      '--folder',
+      '--option',
+      '--start-date',
+      '--due-date',
+      '--json',
+    ],
     quickReference: [
       {
         section: 'write',
         usage: 'list-from-template <name>',
         description: 'Create a list from a template',
+      },
+    ],
+  },
+  {
+    name: 'folder-from-template',
+    description: 'Create a folder from a folder template',
+    flags: ['--space', '--template', '--option', '--start-date', '--due-date', '--json'],
+    quickReference: [
+      {
+        section: 'write',
+        usage: 'folder-from-template <name>',
+        description: 'Create a folder from a template',
       },
     ],
   },
