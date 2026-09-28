@@ -3,5 +3,11 @@
   "singleQuote": true,
   "trailingComma": "all",
   "printWidth": 100,
-  "arrowParens": "avoid"
+  "arrowParens": "avoid",
+  "overrides": [
+    {
+      "files": "skills/clickup-cli/SKILL.md",
+      "options": { "proseWrap": "never" }
+    }
+  ]
 }
