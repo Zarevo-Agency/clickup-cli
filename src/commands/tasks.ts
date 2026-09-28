@@ -1,10 +1,11 @@
 import { ClickUpClient } from '../api.js'
-import type { Task, TaskFilters, CustomTaskType } from '../api.js'
+import type { CustomField, Task, TaskFilters, CustomTaskType } from '../api.js'
 import type { Config } from '../config.js'
 import { formatDate } from '../date.js'
 import { isTTY, shouldOutputJson } from '../output.js'
 import { formatTasksMarkdown } from '../markdown.js'
 import { interactiveTaskPicker, showDetailsAndOpen } from '../interactive.js'
+import { isRecord } from '../util/guards.js'
 
 export interface TaskSummary {
   id: string
@@ -19,9 +20,33 @@ export interface TaskSummary {
   parent?: string
 }
 
-interface FetchOptions extends TaskFilters {
+export interface CompactCustomField {
+  id: string
+  name: string
+  type: string
+  value: unknown
+}
+
+export interface TaskDetailSummary extends TaskSummary {
+  assignees?: Array<{ id: number; username: string }>
+  tags?: string[]
+  custom_fields?: CompactCustomField[]
+  start_date?: string
+  date_created?: string
+  date_updated?: string
+  date_done?: string
+  points?: number
+  time_estimate?: number
+}
+
+export interface FetchOptions extends TaskFilters {
   typeFilter?: string
   name?: string
+}
+
+export interface TaskRecords {
+  tasks: Task[]
+  typeMap: Map<number, string>
 }
 
 const DONE_PATTERNS = ['done', 'complete', 'closed']
@@ -57,6 +82,94 @@ export function summarize(task: Task, typeMap?: Map<number, string>): TaskSummar
   }
 }
 
+function toIso(ms: unknown): string | undefined {
+  if (ms === null || ms === undefined || ms === '') return undefined
+  const date = new Date(Number(ms))
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+}
+
+function isFieldSet(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false
+  return !Array.isArray(value) || value.length > 0
+}
+
+function optionName(field: CustomField, value: unknown): unknown {
+  const options = field.type_config?.options ?? []
+  const option =
+    options.find(o => o.id === value) ??
+    (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))
+      ? options.find(o => o.orderindex === Number(value))
+      : undefined)
+  return option ? (option.name ?? option.label ?? option.id) : value
+}
+
+/** Human-readable custom field value: option names, user names, ISO dates, numbers. */
+function readableFieldValue(field: CustomField): unknown {
+  const { value } = field
+  const items: unknown[] | undefined = Array.isArray(value) ? (value as unknown[]) : undefined
+  switch (field.type) {
+    case 'drop_down':
+      return optionName(field, value)
+    case 'labels':
+      return items ? items.map(v => optionName(field, v)) : value
+    case 'users':
+      return items
+        ? items.map(u => (isRecord(u) && typeof u.username === 'string' ? u.username : u))
+        : value
+    case 'tasks':
+    case 'list_relationship':
+      return items ? items.map(t => (isRecord(t) ? { id: t.id, name: t.name } : t)) : value
+    case 'date':
+      return toIso(value) ?? value
+    case 'checkbox':
+      return value === true || value === 'true'
+    case 'number':
+    case 'currency':
+    case 'emoji': {
+      const n = Number(value)
+      return Number.isFinite(n) ? n : value
+    }
+    case 'location':
+      return isRecord(value) && typeof value.formatted_address === 'string'
+        ? value.formatted_address
+        : value
+    default:
+      return value
+  }
+}
+
+function compactCustomFields(fields: CustomField[]): CompactCustomField[] {
+  return fields
+    .filter(f => isFieldSet(f.value))
+    .map(f => ({ id: f.id, name: f.name, type: f.type, value: readableFieldValue(f) }))
+}
+
+/**
+ * `summarize` plus assignees, tags, set custom fields and ISO dates for JSON
+ * output. Keys the task object lacks are omitted.
+ */
+export function summarizeDetailed(task: Task, typeMap?: Map<number, string>): TaskDetailSummary {
+  const summary: TaskDetailSummary = summarize(task, typeMap)
+  if (Array.isArray(task.assignees)) {
+    summary.assignees = task.assignees.map(a => ({ id: a.id, username: a.username }))
+  }
+  if (Array.isArray(task.tags)) summary.tags = task.tags.map(t => t.name)
+  if (Array.isArray(task.custom_fields)) {
+    summary.custom_fields = compactCustomFields(task.custom_fields)
+  }
+  const startDate = toIso(task.start_date)
+  if (startDate) summary.start_date = startDate
+  const created = toIso(task.date_created)
+  if (created) summary.date_created = created
+  const updated = toIso(task.date_updated)
+  if (updated) summary.date_updated = updated
+  const done = toIso(task.date_done)
+  if (done) summary.date_done = done
+  if (typeof task.points === 'number') summary.points = task.points
+  if (typeof task.time_estimate === 'number') summary.time_estimate = task.time_estimate
+  return summary
+}
+
 export function buildTypeMap(types: CustomTaskType[]): Map<number, string> {
   const map = new Map<number, string>()
   for (const t of types) {
@@ -65,7 +178,7 @@ export function buildTypeMap(types: CustomTaskType[]): Map<number, string> {
   return map
 }
 
-function resolveTypeFilter(typeFilter: string, typeMap: Map<number, string>): number | undefined {
+function resolveTypeFilter(typeFilter: string, typeMap: Map<number, string>): number {
   if (typeFilter === 'task') return 0
   const asNum = Number(typeFilter)
   if (Number.isFinite(asNum)) return asNum
@@ -77,23 +190,31 @@ function resolveTypeFilter(typeFilter: string, typeMap: Map<number, string>): nu
   throw new Error(`Unknown task type "${typeFilter}". Available types: ${available}`)
 }
 
-export async function fetchMyTasks(
+/**
+ * Fetch tasks via Get Filtered Team Tasks. A task type filter is sent as
+ * `custom_items[]` and re-checked client-side; `name` filters client-side.
+ */
+export async function fetchTaskRecords(
   config: Config,
   opts: FetchOptions = {},
-): Promise<TaskSummary[]> {
-  const client = new ClickUpClient(config)
+  client: ClickUpClient = new ClickUpClient(config),
+): Promise<TaskRecords> {
   const { typeFilter, name, ...apiFilters } = opts
+  const typesPromise = client.getCustomTaskTypes(config.teamId)
+
+  let targetId: number | undefined
+  if (typeFilter) {
+    targetId = resolveTypeFilter(typeFilter, buildTypeMap(await typesPromise))
+    apiFilters.customItems = [targetId]
+  }
 
   const [allTasks, customTypes] = await Promise.all([
     client.getMyTasks(config.teamId, apiFilters),
-    client.getCustomTaskTypes(config.teamId),
+    typesPromise,
   ])
 
-  const typeMap = buildTypeMap(customTypes)
-
   let filtered = allTasks
-  if (typeFilter) {
-    const targetId = resolveTypeFilter(typeFilter, typeMap)
+  if (targetId !== undefined) {
     filtered = allTasks.filter(t => (t.custom_item_id ?? 0) === targetId)
   }
 
@@ -102,7 +223,15 @@ export async function fetchMyTasks(
     filtered = filtered.filter(t => t.name.toLowerCase().includes(query))
   }
 
-  return filtered.map(t => summarize(t, typeMap))
+  return { tasks: filtered, typeMap: buildTypeMap(customTypes) }
+}
+
+export async function fetchMyTasks(
+  config: Config,
+  opts: FetchOptions = {},
+): Promise<TaskSummary[]> {
+  const { tasks, typeMap } = await fetchTaskRecords(config, opts)
+  return tasks.map(t => summarize(t, typeMap))
 }
 
 export async function printTasks(
@@ -133,4 +262,18 @@ export async function printTasks(
 
   const selected = await interactiveTaskPicker(tasks)
   await showDetailsAndOpen(selected, fetchTask)
+}
+
+/** Print raw API tasks with `--full`, otherwise detailed summaries through `printTasks`. */
+export async function printTaskResults(
+  records: TaskRecords,
+  opts: { json?: boolean; full?: boolean },
+  config?: Config,
+): Promise<void> {
+  if (opts.full) {
+    console.log(JSON.stringify(records.tasks, null, 2))
+    return
+  }
+  const summaries = records.tasks.map(t => summarizeDetailed(t, records.typeMap))
+  await printTasks(summaries, opts.json ?? false, config)
 }

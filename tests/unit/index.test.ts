@@ -600,6 +600,113 @@ describe('cup create --field with task-relationship values', () => {
   })
 })
 
+describe('cup tasks / cup search filter flags', () => {
+  const fetchMock = vi.fn()
+  const task = {
+    id: 't1',
+    name: 'Acme deal',
+    status: { status: 'won', color: '' },
+    assignees: [],
+    url: 'https://app.clickup.com/t/t1',
+    list: { id: '111', name: 'Deals' },
+    custom_fields: [{ id: 'cf-amount', name: 'Deal Value', type: 'currency', value: '900' }],
+  }
+
+  function respond(body: unknown) {
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))
+  }
+
+  function taskRequests(): URLSearchParams[] {
+    return fetchMock.mock.calls
+      .map(call => new URL(String(call[0])))
+      .filter(url => url.pathname.endsWith('/team/team_1/task'))
+      .map(url => url.searchParams)
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockLoadConfig.mockClear().mockReturnValue(config)
+    mockIsTTY.mockReset().mockReturnValue(false)
+    mockShouldOutputJson.mockReset().mockImplementation((force: boolean) => force)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    process.exitCode = undefined
+    fetchMock.mockReset().mockImplementation((input: string) => {
+      const path = new URL(input).pathname
+      if (path.endsWith('/user')) return respond({ user: { id: 42, username: 'me' } })
+      if (path.endsWith('/custom_item')) return respond({ custom_items: [] })
+      if (path.endsWith('/list/111/field')) {
+        return respond({ fields: [{ id: 'cf-amount', name: 'Deal Value', type: 'currency' }] })
+      }
+      if (path.endsWith('/field')) return respond({ fields: [] })
+      return respond({ tasks: [task], last_page: true })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    process.exitCode = undefined
+  })
+
+  it('cup tasks sends repeated, comma-separated and custom field filters', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(
+      [
+        'tasks',
+        '--all',
+        '--status',
+        'won',
+        '--status',
+        'lost',
+        '--list',
+        '111',
+        '--folder',
+        '444,555',
+        '--where',
+        'Deal Value >= 500',
+        '--order-by',
+        'updated',
+        '--reverse',
+        '--no-subtasks',
+        '--json',
+      ],
+      { from: 'user' },
+    )
+
+    expect(process.exitCode).toBeUndefined()
+    const [params] = taskRequests()
+    expect(params!.getAll('statuses[]')).toEqual(['won', 'lost'])
+    expect(params!.getAll('project_ids[]')).toEqual(['444', '555'])
+    expect(params!.get('subtasks')).toBe('false')
+    expect(params!.get('order_by')).toBe('updated')
+    expect(JSON.parse(params!.get('custom_fields')!)).toEqual([
+      { field_id: 'cf-amount', operator: '>=', value: 500 },
+    ])
+    const output = JSON.parse(vi.mocked(console.log).mock.calls[0]![0] as string) as unknown[]
+    expect(output[0]).toMatchObject({
+      id: 't1',
+      custom_fields: [{ name: 'Deal Value', value: 900 }],
+    })
+  })
+
+  it('cup search accepts the shared flags and --full prints raw tasks', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(
+      ['search', 'acme', '--all', '--tag', 'hot', '--tag', 'vip', '--status', 'wo', '--full'],
+      { from: 'user' },
+    )
+
+    expect(process.exitCode).toBeUndefined()
+    const [params] = taskRequests()
+    expect(params!.getAll('tags[]')).toEqual(['hot', 'vip'])
+    expect(params!.has('statuses[]')).toBe(false)
+    const output = JSON.parse(vi.mocked(console.log).mock.calls[0]![0] as string) as unknown
+    expect(output).toEqual([task])
+  })
+})
+
 describe('global option collisions', () => {
   it('no subcommand declares a short flag that a global option already uses', async () => {
     // Commander resolves a shared short flag to the global option, so a

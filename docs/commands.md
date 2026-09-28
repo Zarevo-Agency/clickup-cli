@@ -314,43 +314,92 @@ cup skill --path ~/.claude/skills/clickup/SKILL.md   # install to a specific pat
 
 ### `cup tasks`
 
-List tasks assigned to you by default. Use `--all` to include all assignees. Shows all task types by default; use `--type` to filter by task type.
+List tasks assigned to you by default. Use `--all` to include all assignees. Shows all task types by default; use `--type` to filter by task type. Every filter except `--name` runs server-side (ClickUp "Get Filtered Team Tasks").
 
 ```bash
 cup tasks
 cup tasks --status "in progress"
+cup tasks --status "to do" --status "in progress"   # repeatable
 cup tasks --name "login"
 cup tasks --type task                  # regular tasks only
 cup tasks --type initiative            # initiatives only
 cup tasks --type "Bug"                 # custom task type by name
 cup tasks --list <listId>
+cup tasks --list 111,222               # several lists
 cup tasks --space <spaceId>
+cup tasks --space Sales --folder Pipeline   # names resolve to IDs
 cup tasks --include-closed
 cup tasks --assignee me
+cup tasks --all --assignee 123,456
 cup tasks --tag "bug" --status "to do"
 cup tasks --due-before 2026-04-01
 cup tasks --created-after 2026-03-01
+cup tasks --updated-after 2026-03-01T09:00
+cup tasks --all --done-after 2026-03-01   # completed since (closed tasks included)
+cup tasks --all --parent abc123         # subtasks of a task
+cup tasks --no-subtasks --order-by due_date --reverse
 cup tasks --list 123 --field "Sprint" "Week 1"
+cup tasks --all --space Sales --where "Deal Stage ANY Proposal,Negotiation" --where "Deal Value >= 5000"
+cup tasks --all --list 123 --where "Close Date RANGE 2026-01-01,2026-03-31"
+cup tasks --all --list 123 --where "Owner ANY me" --where "Next Step IS NULL"
 cup tasks --json
+cup tasks --full                       # raw ClickUp task objects
 ```
 
-| Flag                      | Description                                                     |
-| ------------------------- | --------------------------------------------------------------- |
-| `--status <status>`       | Filter by status (e.g. "in progress")                           |
-| `--list <listId>`         | Filter by list ID                                               |
-| `--space <spaceId\|name>` | Filter by space ID or name (partial match)                      |
-| `--name <partial>`        | Filter by name (case-insensitive contains)                      |
-| `--type <type>`           | Filter by task type (e.g. "task", "initiative", custom name/ID) |
-| `--all`                   | Include all tasks, not just mine                                |
-| `--include-closed`        | Include done/closed tasks                                       |
-| `--assignee <userId>`     | Filter by assignee (user ID or "me")                            |
-| `--tag <tag>`             | Filter by tag name                                              |
-| `--due-before <date>`     | Tasks due before date (YYYY-MM-DD)                              |
-| `--due-after <date>`      | Tasks due after date (YYYY-MM-DD)                               |
-| `--created-after <date>`  | Tasks created after date (YYYY-MM-DD)                           |
-| `--created-before <date>` | Tasks created before date (YYYY-MM-DD)                          |
-| `--field <name> <value>`  | Filter by custom field (requires `--list`)                      |
-| `--json`                  | Force JSON output                                               |
+| Flag                        | Description                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--name <partial>`          | Filter by name (case-insensitive contains, client-side)                                                       |
+| `--status <status>`         | Filter by status (repeatable)                                                                                 |
+| `--list <listId>`           | Filter by list ID (repeatable, comma-separated)                                                               |
+| `--space <spaceId\|name>`   | Filter by space ID or name, partial match (repeatable, comma-separated)                                       |
+| `--folder <folderId\|name>` | Filter by folder ID or name, partial match, searched in `--space` or all spaces (repeatable, comma-separated) |
+| `--type <type>`             | Filter by task type (e.g. "task", "initiative", custom name/ID), sent as `custom_items[]`                     |
+| `--all`                     | Include all tasks, not just mine                                                                              |
+| `--include-closed`          | Include done/closed tasks                                                                                     |
+| `--assignee <userId>`       | Filter by assignee: user ID or `me` (repeatable, comma-separated)                                             |
+| `--tag <tag>`               | Filter by tag name (repeatable)                                                                               |
+| `--due-before <date>`       | Tasks due before date                                                                                         |
+| `--due-after <date>`        | Tasks due after date                                                                                          |
+| `--created-after <date>`    | Tasks created after date                                                                                      |
+| `--created-before <date>`   | Tasks created before date                                                                                     |
+| `--updated-after <date>`    | Tasks updated after date                                                                                      |
+| `--updated-before <date>`   | Tasks updated before date                                                                                     |
+| `--done-after <date>`       | Tasks done after date (implies `--include-closed`)                                                            |
+| `--done-before <date>`      | Tasks done before date (implies `--include-closed`)                                                           |
+| `--parent <taskId>`         | Only subtasks of this task (ID, custom ID or URL)                                                             |
+| `--no-subtasks`             | Exclude subtasks (cup includes them by default)                                                               |
+| `--where <expr>`            | Custom field filter `"<field> <operator> [value]"` (repeatable, see below)                                    |
+| `--field <name> <value>`    | Custom field filter, same as `--where "<name> = <value>"`                                                     |
+| `--order-by <field>`        | Sort by `id`, `created`, `updated` or `due_date` (ClickUp default: `created`)                                 |
+| `--reverse`                 | Reverse the sort order                                                                                        |
+| `--full`                    | Print raw ClickUp task objects as JSON (implies JSON output)                                                  |
+| `--json`                    | Force JSON output                                                                                             |
+
+Dates accept `YYYY-MM-DD` (midnight), `YYYY-MM-DDTHH:MM[:SS]` or ISO 8601 with offset. Dates without an offset are read in your ClickUp user timezone.
+
+Without `--all`, your own user ID is always sent as an assignee filter as well, also when `--assignee` is given. Use `--all --assignee <id>` to filter by other people only.
+
+#### Custom field filters (`--where`)
+
+`--where "<field> <operator> [value]"` filters by custom field values server-side. The field is a name (case-insensitive, may contain spaces) or a field ID. Repeat the flag to combine filters (all must match).
+
+| Operator                        | Meaning                                           |
+| ------------------------------- | ------------------------------------------------- |
+| `=`                             | Equals; for text fields "contains"                |
+| `==` / `!==`                    | Exact match / no exact match (text)               |
+| `!=`                            | Not equal; for text fields "does not contain"     |
+| `<` `<=` `>` `>=`               | Comparisons (numbers, dates)                      |
+| `IS NULL` / `IS NOT NULL`       | Field is empty / set (takes no value)             |
+| `RANGE`                         | Between two comma-separated values: `RANGE 10,20` |
+| `ANY` `ALL` `NOT ANY` `NOT ALL` | Comma-separated values: `ANY Proposal,Won`        |
+
+Values are converted by field type: dropdown options (by name, ID or orderindex) are sent as their `orderindex`, label options as their option ID, numbers and currency become numbers, dates use the formats above or Unix ms, checkboxes take `true`/`false`, people fields take user IDs or `me`. Label fields do not support `=`; use `ANY` or `ALL`. Other types are sent as text.
+
+With `--list`, field names are looked up in that list's fields, which include inherited workspace, space and folder fields. Otherwise cup checks workspace-level fields plus the fields of `--folder` and `--space`; when a name is missing there, the fields of every list in that scope are checked too. Without any scope only workspace-level fields are found; pass `--list`, `--folder`, `--space` or the field ID. A field ID that is not found in scope is sent with its values unconverted. If the same name belongs to different fields, cup lists them and asks for the ID (`cup fields <listId>` shows IDs).
+
+#### JSON output
+
+`--json` prints one summary per task with the keys `id`, `name`, `status`, `task_type`, `priority`, `due_date`, `dueRaw`, `list`, `url`, `parent`, plus `assignees` (`id`, `username`), `tags` (names), `custom_fields` (only fields with a value: `id`, `name`, `type`, readable `value` with option names, user names and ISO dates), `start_date`, `date_created`, `date_updated`, `date_done` (ISO 8601, UTC), `points` and `time_estimate` (ms). Keys the task does not carry are omitted. `--full` prints the task objects exactly as ClickUp returns them.
 
 ### `cup sprint`
 
@@ -495,37 +544,28 @@ If the query matches multiple tasks by name, all matches are listed and the firs
 
 ### `cup search [query]`
 
-Search tasks by name, or list tasks filtered by flags when no query is given. Defaults to your tasks; use `--all` for all assignees. Supports multi-word queries with case-insensitive matching. Status filter supports fuzzy matching.
+Search tasks by name, or list tasks filtered by flags when no query is given. Defaults to your tasks; use `--all` for all assignees. Supports multi-word queries with case-insensitive matching. Accepts the same filter and output flags as [`cup tasks`](#cup-tasks) (all except `--name`), including `--where`, `--full` and the JSON summary keys. `--status` differs: it is fuzzy-matched client-side against the statuses of the fetched tasks, and several values match any of them.
 
 ```bash
 cup search "login bug"
 cup search auth
 cup search "payment flow" --json
 cup search auth --status "prog"     # fuzzy matches "in progress"
+cup search --status prog --status review
 cup search "old task" --include-closed
 cup search "payment" --all          # search all workspace tasks
 cup search "auth" --list 123 --space 456
 cup search "bug" --tag "frontend" --due-before 2026-04-01
 cup search "sprint" --list 123 --field "Sprint" "Week 1"
+cup search "acme" --all --space Sales --where "Deal Stage = Won" --full
 cup search --assignee me            # no query — all my tasks
 cup search --assignee me --status "in progress"  # filter without query
 ```
 
-| Flag                      | Description                                |
-| ------------------------- | ------------------------------------------ |
-| `--status <s>`            | Filter by status, supports fuzzy matching  |
-| `--list <listId>`         | Filter by list ID                          |
-| `--space <spaceId\|name>` | Filter by space ID or name (partial match) |
-| `--all`                   | Search all workspace tasks, not just mine  |
-| `--include-closed`        | Include done/closed tasks                  |
-| `--assignee <userId>`     | Filter by assignee (user ID or "me")       |
-| `--tag <tag>`             | Filter by tag name                         |
-| `--due-before <date>`     | Tasks due before date (YYYY-MM-DD)         |
-| `--due-after <date>`      | Tasks due after date (YYYY-MM-DD)          |
-| `--created-after <date>`  | Tasks created after date (YYYY-MM-DD)      |
-| `--created-before <date>` | Tasks created before date (YYYY-MM-DD)     |
-| `--field <name> <value>`  | Filter by custom field (requires `--list`) |
-| `--json`                  | Force JSON output                          |
+| Flag                        | Description                                                |
+| --------------------------- | ---------------------------------------------------------- |
+| `--status <s>`              | Filter by status, fuzzy matching (repeatable, matches any) |
+| All other `cup tasks` flags | Same behavior as on `cup tasks` (except `--name`)          |
 
 ### `cup summary`
 

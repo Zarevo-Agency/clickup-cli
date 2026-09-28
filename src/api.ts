@@ -35,6 +35,7 @@ export interface Task {
   start_date?: string | null
   due_date?: string | null
   time_estimate?: number | null
+  points?: number | null
   time_spent?: number
   tags?: Array<{ name: string }>
   date_created?: string
@@ -60,6 +61,10 @@ export interface TaskFilters {
   statuses?: string[]
   listIds?: string[]
   spaceIds?: string[]
+  folderIds?: string[]
+  /** Task type ids (`custom_items[]`): 0 = task, 1 = milestone, others are custom types. */
+  customItems?: number[]
+  parent?: string
   subtasks?: boolean
   includeClosed?: boolean
   /** Include archived tasks (ClickUp hides them by default). */
@@ -73,7 +78,11 @@ export interface TaskFilters {
   dateCreatedLt?: number
   dateUpdatedGt?: number
   dateUpdatedLt?: number
+  dateDoneGt?: number
+  dateDoneLt?: number
   customFields?: Array<{ field_id: string; operator: string; value?: unknown }>
+  orderBy?: 'id' | 'created' | 'updated' | 'due_date'
+  reverse?: boolean
 }
 
 export type Priority = 1 | 2 | 3 | 4
@@ -757,16 +766,23 @@ export class ClickUpClient {
     for (const s of filters.statuses ?? []) baseParams.append('statuses[]', s)
     for (const id of filters.listIds ?? []) baseParams.append('list_ids[]', id)
     for (const id of filters.spaceIds ?? []) baseParams.append('space_ids[]', id)
+    for (const id of filters.folderIds ?? []) baseParams.append('project_ids[]', id)
+    for (const id of filters.customItems ?? []) baseParams.append('custom_items[]', String(id))
     for (const tag of filters.tags ?? []) baseParams.append('tags[]', tag)
+    if (filters.parent) baseParams.set('parent', filters.parent)
     if (filters.dueDateGt) baseParams.set('due_date_gt', String(filters.dueDateGt))
     if (filters.dueDateLt) baseParams.set('due_date_lt', String(filters.dueDateLt))
     if (filters.dateCreatedGt) baseParams.set('date_created_gt', String(filters.dateCreatedGt))
     if (filters.dateCreatedLt) baseParams.set('date_created_lt', String(filters.dateCreatedLt))
     if (filters.dateUpdatedGt) baseParams.set('date_updated_gt', String(filters.dateUpdatedGt))
     if (filters.dateUpdatedLt) baseParams.set('date_updated_lt', String(filters.dateUpdatedLt))
+    if (filters.dateDoneGt) baseParams.set('date_done_gt', String(filters.dateDoneGt))
+    if (filters.dateDoneLt) baseParams.set('date_done_lt', String(filters.dateDoneLt))
     if (filters.customFields?.length) {
       baseParams.set('custom_fields', JSON.stringify(filters.customFields))
     }
+    if (filters.orderBy) baseParams.set('order_by', filters.orderBy)
+    if (filters.reverse) baseParams.set('reverse', 'true')
 
     return this.paginate(page => {
       const params = new URLSearchParams(baseParams)
@@ -1272,6 +1288,26 @@ export class ClickUpClient {
   async getListCustomFields(listId: string): Promise<CustomFieldDefinition[]> {
     const data = await this.request<{ fields: CustomFieldDefinition[] }>(`/list/${listId}/field`)
     return readCollectionField<CustomFieldDefinition>(data, 'fields', 'list custom fields')
+  }
+
+  /** Fields created on the folder itself; list-level fields are not included. */
+  async getFolderCustomFields(folderId: string): Promise<CustomFieldDefinition[]> {
+    const data = await this.request<{ fields: CustomFieldDefinition[] }>(
+      `/folder/${folderId}/field`,
+    )
+    return readCollectionField<CustomFieldDefinition>(data, 'fields', 'folder custom fields')
+  }
+
+  /** Fields created on the space itself; folder- and list-level fields are not included. */
+  async getSpaceCustomFields(spaceId: string): Promise<CustomFieldDefinition[]> {
+    const data = await this.request<{ fields: CustomFieldDefinition[] }>(`/space/${spaceId}/field`)
+    return readCollectionField<CustomFieldDefinition>(data, 'fields', 'space custom fields')
+  }
+
+  /** Fields created at workspace level; space-, folder- and list-level fields are not included. */
+  async getWorkspaceCustomFields(teamId: string): Promise<CustomFieldDefinition[]> {
+    const data = await this.request<{ fields: CustomFieldDefinition[] }>(`/team/${teamId}/field`)
+    return readCollectionField<CustomFieldDefinition>(data, 'fields', 'workspace custom fields')
   }
 
   async createChecklist(taskId: string, name: string): Promise<Checklist> {

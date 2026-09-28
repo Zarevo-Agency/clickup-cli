@@ -12,6 +12,8 @@ Status: :white_check_mark: implemented | :construction: planned | :no_entry_sign
 | Update task          | `cup update <id>`                                                                  | :white_check_mark: |
 | Delete task          | `cup delete <id>`                                                                  | :white_check_mark: |
 | Search tasks         | `cup search <query>`                                                               | :white_check_mark: |
+| Filter tasks         | `cup tasks` / `cup search` filter flags                                            | :white_check_mark: |
+| Raw task JSON        | `cup tasks --full`, `cup search --full`                                            | :white_check_mark: |
 | Open in browser      | `cup open <query>`                                                                 | :white_check_mark: |
 | List subtasks        | `cup subtasks <id>`                                                                | :white_check_mark: |
 | Assign / unassign    | `cup assign <id>`                                                                  | :white_check_mark: |
@@ -85,6 +87,7 @@ Comment reads (`comments`, `activity`, `list-comments`, `view-comments`, `commen
 | Set field value       | `cup field <id> --set`    | :white_check_mark: |
 | Remove field value    | `cup field <id> --remove` | :white_check_mark: |
 | List available fields | `cup fields <listId>`     | :white_check_mark: |
+| Filter tasks by field | `cup tasks --where`       | :white_check_mark: |
 | Create custom field   | `cup field-create <name>` | :white_check_mark: |
 
 ## Tags

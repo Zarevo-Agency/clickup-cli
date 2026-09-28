@@ -120,6 +120,37 @@ describe('searchTasks', () => {
     expect(result[0]!.id).toBe('t1')
   })
 
+  it('matches any of several fuzzy statuses', async () => {
+    mockGetMyTasks.mockResolvedValue([
+      baseTask({ id: 't1', status: { status: 'in progress', color: '' } }),
+      baseTask({ id: 't2', status: { status: 'review', color: '' } }),
+      baseTask({ id: 't3', status: { status: 'open', color: '' } }),
+    ])
+    const { searchTasks } = await import('../../../src/commands/search.js')
+    const result = await searchTasks(config, undefined, { status: ['prog', 'review'] })
+    expect(result.map(t => t.id)).toEqual(['t1', 't2'])
+    expect(mockGetMyTasks).toHaveBeenCalledWith('team1', {})
+  })
+
+  it('passes server-side filters through and filters by task type', async () => {
+    mockGetMyTasks.mockResolvedValue([
+      baseTask({ id: 't1', custom_item_id: 0 }),
+      baseTask({ id: 't2', custom_item_id: 5 }),
+    ])
+    const { searchTasks } = await import('../../../src/commands/search.js')
+    const result = await searchTasks(config, undefined, {
+      typeFilter: '5',
+      folderIds: ['444'],
+      orderBy: 'updated',
+    })
+    expect(result.map(t => t.id)).toEqual(['t2'])
+    expect(mockGetMyTasks).toHaveBeenCalledWith('team1', {
+      folderIds: ['444'],
+      orderBy: 'updated',
+      customItems: [5],
+    })
+  })
+
   it('returns TaskSummary objects', async () => {
     mockGetMyTasks.mockResolvedValue([baseTask({ id: 't1', name: 'Fix login bug' })])
     const { searchTasks } = await import('../../../src/commands/search.js')
