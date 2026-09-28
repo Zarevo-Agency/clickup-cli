@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 import { ClickUpClient } from './api.js'
+import { toErrorJson } from './errors.js'
 import {
   loadConfig,
   addProfile,
@@ -263,12 +264,23 @@ import { fetchViewComments, postViewCommentCommand } from './commands/view-comme
 const require = createRequire(import.meta.url)
 const { version } = require('../package.json') as { version: string }
 
+/** Whether the invoked command got --json; Commander passes the Command as the last action argument. */
+function receivedJsonFlag(args: unknown[]): boolean {
+  const command = args[args.length - 1]
+  return command instanceof Command && command.optsWithGlobals<{ json?: unknown }>().json === true
+}
+
+/** Runs a command action and reports failures on stderr (as one JSON line in JSON mode) with exit code 1. */
 function wrapAction<T extends unknown[]>(
   fn: (...args: T) => Promise<void>,
 ): (...args: T) => Promise<void> {
   return async (...args: T) => {
     await fn(...args).catch((err: unknown) => {
-      console.error(err instanceof Error ? err.message : String(err))
+      if (shouldOutputJson(receivedJsonFlag(args))) {
+        console.error(JSON.stringify(toErrorJson(err)))
+      } else {
+        console.error(err instanceof Error ? err.message : String(err))
+      }
       process.exitCode = 1
     })
   }

@@ -1,4 +1,5 @@
 import type { CommentBlock } from './commands/comment-format.js'
+import { ClickUpApiError } from './errors.js'
 import { isRecord } from './util/guards.js'
 import type { RateLimiter } from './util/rate-limit.js'
 
@@ -596,7 +597,7 @@ export class ClickUpClient {
     })
     if (res.status === 204 || res.headers.get('content-length') === '0') {
       if (!res.ok) {
-        throw new Error(`ClickUp API error ${res.status}: ${res.statusText}`)
+        throw new ClickUpApiError(res.status, res.statusText)
       }
       return {} as T
     }
@@ -604,14 +605,10 @@ export class ClickUpClient {
     try {
       parsed = await res.json()
     } catch {
-      throw new Error(`ClickUp API error ${res.status}: response was not valid JSON`)
+      throw new ClickUpApiError(res.status, 'response was not valid JSON')
     }
+    if (!res.ok) throw ClickUpApiError.fromBody(res.status, parsed, res.statusText)
     const data = expectRecord(parsed, 'JSON')
-    if (!res.ok) {
-      const raw = data.err ?? data.error ?? data.ECODE ?? res.statusText
-      const errMsg = typeof raw === 'string' ? raw : JSON.stringify(raw)
-      throw new Error(`ClickUp API error ${res.status}: ${errMsg}`)
-    }
     return data as T
   }
 
@@ -629,7 +626,7 @@ export class ClickUpClient {
     })
     if (res.status === 204 || res.headers.get('content-length') === '0') {
       if (!res.ok) {
-        throw new Error(`ClickUp API error ${res.status}: ${res.statusText}`)
+        throw new ClickUpApiError(res.status, res.statusText)
       }
       return []
     }
@@ -637,16 +634,9 @@ export class ClickUpClient {
     try {
       parsed = await res.json()
     } catch {
-      throw new Error(`ClickUp API error ${res.status}: response was not valid JSON`)
+      throw new ClickUpApiError(res.status, 'response was not valid JSON')
     }
-    if (!res.ok) {
-      let errMsg = res.statusText
-      if (isRecord(parsed)) {
-        const raw = parsed.err ?? parsed.error ?? parsed.ECODE
-        if (typeof raw === 'string') errMsg = raw
-      }
-      throw new Error(`ClickUp API error ${res.status}: ${errMsg}`)
-    }
+    if (!res.ok) throw ClickUpApiError.fromBody(res.status, parsed, res.statusText)
     if (!Array.isArray(parsed)) {
       throw new Error('Unexpected API response: expected JSON array')
     }
@@ -1421,20 +1411,14 @@ export class ClickUpClient {
       signal: AbortSignal.timeout(60_000),
     })
     if (!res.ok) {
-      let msg: string
-      try {
-        const data = (await res.json()) as { err?: string }
-        msg = data.err ?? `HTTP ${res.status}`
-      } catch {
-        msg = `HTTP ${res.status}`
-      }
-      throw new Error(`ClickUp API error ${res.status}: ${msg}`)
+      const body: unknown = await res.json().catch(() => null)
+      throw ClickUpApiError.fromBody(res.status, body, `HTTP ${res.status}`)
     }
     let data: Attachment
     try {
       data = (await res.json()) as Attachment
     } catch {
-      throw new Error(`ClickUp API error ${res.status}: response was not valid JSON`)
+      throw new ClickUpApiError(res.status, 'response was not valid JSON')
     }
     return data
   }

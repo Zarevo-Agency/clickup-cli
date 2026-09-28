@@ -14,6 +14,8 @@ Commands behave differently based on how they're invoked:
 
 Interactive prompts also appear for: sprint disambiguation (multiple matches), workspace selection (`cup init`), agent selection (`cup skill`), and destructive confirmations (`cup delete`, `cup list-delete`, `cup folder-delete`, `cup space-delete`, `cup archive`, `cup view-delete`, `cup merge`, `cup webhook delete`).
 
+**Errors:** Failed commands exit with code 1 and print the message on stderr. ClickUp API errors keep ClickUp's error code (ECODE) at the end, e.g. `ClickUp API error 401: Token invalid [OAUTH_025]`. With `--json` or `CU_OUTPUT=json`, stderr gets one JSON line instead: `{"error":{"message":"ClickUp API error 401: Token invalid [OAUTH_025]","status":401,"ecode":"OAUTH_025"}}`. `status` and `ecode` are `null` for errors that did not come from the ClickUp API. Argument parsing errors (unknown option, missing argument) stay plain text.
+
 ## Multiline markdown for descriptions and comments
 
 Agents and scripts frequently pass multiline markdown to `-d` / `-m`. Shell quoting is the main failure point (natural-language apostrophes, bullet lists, code blocks). In order of preference:
