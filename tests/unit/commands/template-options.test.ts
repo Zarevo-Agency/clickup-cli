@@ -152,9 +152,10 @@ describe('resolveTemplateRef', () => {
     { id: 't-1003', name: 'Retainer' },
   ]
 
-  it('passes t-<digits> IDs through without loading templates', async () => {
+  it('passes t-<id> IDs through without loading templates', async () => {
     const load = vi.fn()
     expect(await resolveTemplateRef('t-9999', 'folder', load)).toBe('t-9999')
+    expect(await resolveTemplateRef('t-abc123', 'list', load)).toBe('t-abc123')
     expect(load).not.toHaveBeenCalled()
   })
 
@@ -164,8 +165,8 @@ describe('resolveTemplateRef', () => {
   })
 
   it('accepts listed IDs in other formats', async () => {
-    const load = vi.fn().mockResolvedValue([{ id: 't-abc', name: 'Odd' }])
-    expect(await resolveTemplateRef('t-abc', 'list', load)).toBe('t-abc')
+    const load = vi.fn().mockResolvedValue([{ id: 'tmpl_1', name: 'Odd' }])
+    expect(await resolveTemplateRef('tmpl_1', 'list', load)).toBe('tmpl_1')
   })
 
   it('refuses partial and ambiguous names', async () => {
@@ -192,6 +193,18 @@ describe('resolveTemplateSpace', () => {
     expect(await resolveTemplateSpace(client, 'team1', 'clients')).toBe('2001')
     await expect(resolveTemplateSpace(client, 'team1', 'Client')).rejects.toThrow(
       'Space "Client" not found',
+    )
+  })
+
+  it('refuses a name shared by several spaces', async () => {
+    const client = {
+      getSpaces: vi.fn().mockResolvedValue([
+        { id: '2001', name: 'Clients' },
+        { id: '2003', name: 'clients' },
+      ]),
+    }
+    await expect(resolveTemplateSpace(client, 'team1', 'Clients')).rejects.toThrow(
+      'Several spaces are named "Clients" (2001, 2003)',
     )
   })
 })

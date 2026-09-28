@@ -1,5 +1,4 @@
 import type { ClickUpClient } from '../api.js'
-import { resolveSpaceRef } from '../export/discover.js'
 import { parseDueDate } from './update.js'
 
 export type TemplateKind = 'folder' | 'list'
@@ -57,7 +56,7 @@ export interface TemplateOptionFlags {
 
 export type TemplateOptions = Record<string, string | number | boolean>
 
-const TEMPLATE_ID_RE = /^t-\d+$/
+const TEMPLATE_ID_RE = /^t-[a-z0-9]+$/i
 
 /**
  * Turns repeatable `--option key=value` plus `--start-date`/`--due-date` into the
@@ -144,7 +143,7 @@ function coerceOption(
 }
 
 /**
- * Returns the template ID for a `t-<digits>` ID (no lookup) or for an ID or exact,
+ * Returns the template ID for a `t-<id>` ID (no lookup) or for an ID or exact,
  * case-insensitive name found in the workspace's templates of that kind.
  */
 export async function resolveTemplateRef(
@@ -171,15 +170,26 @@ export async function resolveTemplateRef(
   throw new Error(`No ${kind} template named "${trimmed}". Available: ${available}`)
 }
 
-/** Numeric space IDs pass through; anything else is matched as an exact space name. */
+/** Numeric space IDs pass through; anything else must be one exact, case-insensitive space name. */
 export async function resolveTemplateSpace(
   client: Pick<ClickUpClient, 'getSpaces'>,
   teamId: string,
   ref: string,
 ): Promise<string> {
   const trimmed = ref.trim()
+  if (!trimmed) throw new Error('--space cannot be empty')
   if (/^\d+$/.test(trimmed)) return trimmed
-  return (await resolveSpaceRef(client, teamId, trimmed)).id
+
+  const spaces = await client.getSpaces(teamId)
+  const needle = trimmed.toLowerCase()
+  const matches = spaces.filter(s => s.name.trim().toLowerCase() === needle)
+  if (matches.length === 1) return matches[0]!.id
+  if (matches.length > 1) {
+    const ids = matches.map(s => s.id).join(', ')
+    throw new Error(`Several spaces are named "${trimmed}" (${ids}); pass the ID`)
+  }
+  const available = spaces.map(s => `"${s.name}" (${s.id})`).join(', ') || 'none'
+  throw new Error(`Space "${trimmed}" not found. Available: ${available}`)
 }
 
 /**
