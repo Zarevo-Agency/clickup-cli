@@ -40,32 +40,41 @@ export async function copyStatusesFrom(
 const OPEN_COLOR = '#87909e'
 const CLOSED_COLOR = '#008844'
 const CUSTOM_COLORS = ['#5f55ee', '#f8ae00', '#1090e0', '#e16b16', '#ee5e99', '#b660e0', '#0f9d9f']
+const STATUS_TYPES = ['open', 'custom', 'done', 'closed']
 
 export function parseStatusNames(
   spec: string,
   current: Array<{ status: string; color: string }> = [],
 ): StatusDefinition[] {
-  const names = spec
+  const entries = spec
     .split(',')
-    .map(name => name.trim().toLowerCase())
+    .map(entry => entry.trim().toLowerCase())
     .filter(Boolean)
-  if (names.length < 2) {
+    .map(entry => {
+      const [name = '', type] = entry.split(':').map(part => part.trim())
+      if (type !== undefined && !STATUS_TYPES.includes(type)) {
+        throw new Error(`Unknown status type "${type}". Use ${STATUS_TYPES.join(', ')}`)
+      }
+      return { name, type }
+    })
+  if (entries.length < 2) {
     throw new Error('Provide at least two statuses: the first is open, the last is closed')
   }
+  const names = entries.map(e => e.name)
   const duplicate = names.find((name, i) => names.indexOf(name) !== i)
   if (duplicate) throw new Error(`Duplicate status "${duplicate}"`)
 
   const currentColors = new Map(current.map(s => [s.status.toLowerCase(), s.color]))
-  const last = names.length - 1
-  return names.map((status, i) => {
-    const type = i === 0 ? 'open' : i === last ? 'closed' : 'custom'
+  const last = entries.length - 1
+  return entries.map(({ name, type: explicit }, i) => {
+    const type = explicit ?? (i === 0 ? 'open' : i === last ? 'closed' : 'custom')
     const fallback =
       type === 'open'
         ? OPEN_COLOR
-        : type === 'closed'
-          ? CLOSED_COLOR
-          : CUSTOM_COLORS[(i - 1) % CUSTOM_COLORS.length]!
-    return { status, type, color: currentColors.get(status) ?? fallback }
+        : type === 'custom'
+          ? CUSTOM_COLORS[(i - 1) % CUSTOM_COLORS.length]!
+          : CLOSED_COLOR
+    return { status: name, type, color: currentColors.get(name) ?? fallback }
   })
 }
 
@@ -117,7 +126,7 @@ export async function listStatuses(
     if (blocking.length > 0) {
       const used = [...new Set(blocking.map(t => t.status.status))].join(', ')
       throw new Error(
-        `${blocking.length} task(s) in list ${listId} still use ${used}. Keep those names in --set, move the tasks, then set the final statuses.`,
+        `${blocking.length} task(s) in list ${listId} still use ${used}. Keep those names in --set (an old closed status as name:done), move the tasks, then set the final statuses.`,
       )
     }
   }

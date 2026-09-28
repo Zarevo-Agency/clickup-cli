@@ -47,6 +47,22 @@ describe('parseStatusNames', () => {
     expect(result[1]).toEqual({ status: 'review', type: 'custom', color: '#123456' })
   })
 
+  it('lets name:type override the positional type', () => {
+    const result = parseStatusNames('offen, complete:done, erledigt, archiv:closed')
+    expect(result.map(s => [s.status, s.type])).toEqual([
+      ['offen', 'open'],
+      ['complete', 'done'],
+      ['erledigt', 'custom'],
+      ['archiv', 'closed'],
+    ])
+  })
+
+  it('rejects unknown status types', () => {
+    expect(() => parseStatusNames('offen,fertig:finished')).toThrow(
+      'Unknown status type "finished"',
+    )
+  })
+
   it('rejects fewer than two statuses', () => {
     expect(() => parseStatusNames('offen, ')).toThrow('at least two statuses')
   })

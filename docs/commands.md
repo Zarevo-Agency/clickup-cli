@@ -1397,19 +1397,26 @@ cup list-create <spaceId> "New List" --copy-statuses-from <spaceId>
 
 ### `cup list-statuses <listId>`
 
-Show the status set of a list, or replace it. `--set` takes comma-separated names: the first becomes the open status, the last the closed one, everything in between is custom. Existing statuses keep their color. `--copy-from` copies the set from another list or a space. The list then overrides the space statuses, and the command reads the list back to confirm ClickUp applied them. It refuses to drop a status that any task in the list still uses, including closed tasks. ClickUp matches task statuses by name, so a direct rename would orphan those tasks. To rename, first set a list that contains both the old and the new names, move the tasks, then set the final list.
+Show the status set of a list, or replace it. `--set` takes comma-separated names: the first becomes the open status, the last the closed one, everything in between is custom. Append `:open`, `:custom`, `:done` or `:closed` to a name to set its type explicitly. Existing statuses keep their color. `--copy-from` copies the set from another list or a space. The list then overrides the space statuses, and the command reads the list back to confirm ClickUp applied them.
+
+It refuses to drop a status that any task in the list still uses, including closed tasks: ClickUp matches task statuses by name, so a direct rename orphans those tasks and clears their closed date. To rename, first set a list that keeps the old names, move the tasks, then set the final list. A closed status can only be moved to another closed one if the old one is temporarily `:done`, which keeps the original closed date.
 
 ```bash
 cup list-statuses <listId>
 cup list-statuses <listId> --set "open,in progress,review,done"
 cup list-statuses <listId> --copy-from <otherListId>
+
+# Rename "complete" to "done" on a list whose tasks are complete
+cup list-statuses <listId> --set "to do,in progress,complete:done,done"
+cup update <taskId> --status done
+cup list-statuses <listId> --set "to do,in progress,done"
 ```
 
-| Flag               | Required | Description                                             |
-| ------------------ | -------- | ------------------------------------------------------- |
-| `--set <names>`    | no       | Comma-separated statuses; first is open, last is closed |
-| `--copy-from <id>` | no       | Copy the status set from this list or space ID          |
-| `--json`           | no       | Force JSON output                                       |
+| Flag               | Required | Description                                                                    |
+| ------------------ | -------- | ------------------------------------------------------------------------------ |
+| `--set <names>`    | no       | Comma-separated statuses; first is open, last is closed, `name:type` overrides |
+| `--copy-from <id>` | no       | Copy the status set from this list or space ID                                 |
+| `--json`           | no       | Force JSON output                                                              |
 
 ### `cup folder-create <spaceId> <name>`
 

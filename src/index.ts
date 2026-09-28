@@ -2783,7 +2783,10 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
   program
     .command('list-statuses <listId>')
     .description('Show or set the status set of a list')
-    .option('--set <names>', 'Comma-separated statuses; first is open, last is closed')
+    .option(
+      '--set <names>',
+      'Comma-separated statuses; first is open, last is closed, name:type overrides',
+    )
     .option('--copy-from <id>', 'Copy the status set from this list or space ID')
     .option('--json', 'Force JSON output even in terminal')
     .action(
