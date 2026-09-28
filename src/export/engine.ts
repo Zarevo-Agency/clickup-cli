@@ -67,7 +67,7 @@ export interface RunSummary {
 
 type EngineClient = Pick<
   ClickUpClient,
-  'getTaskForExport' | 'getAllTaskComments' | 'getThreadedComments'
+  'getTaskForExport' | 'getTaskComments' | 'getThreadedComments'
 >
 
 function addSlice(manifest: Manifest, taskId: string, slice: string): void {

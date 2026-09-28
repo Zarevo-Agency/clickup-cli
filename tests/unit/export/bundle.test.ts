@@ -18,7 +18,7 @@ const baseTask = {
 function makeClient(overrides: Record<string, unknown> = {}) {
   return {
     getTaskForExport: vi.fn().mockResolvedValue(baseTask),
-    getAllTaskComments: vi.fn().mockResolvedValue([
+    getTaskComments: vi.fn().mockResolvedValue([
       { id: 'c1', comment_text: 'root', user: { username: 'a' }, date: '1', reply_count: 1 },
       { id: 'c2', comment_text: 'other', user: { username: 'b' }, date: '2' },
     ]),
@@ -35,7 +35,7 @@ describe('fetchTaskBundle', () => {
     const bundle = await fetchTaskBundle(client, 't1')
 
     expect(client.getTaskForExport).toHaveBeenCalledWith('t1')
-    expect(client.getAllTaskComments).toHaveBeenCalledWith('t1')
+    expect(client.getTaskComments).toHaveBeenCalledWith('t1')
     expect(client.getThreadedComments).toHaveBeenCalledTimes(1)
     expect(client.getThreadedComments).toHaveBeenCalledWith('c1')
 
@@ -47,7 +47,7 @@ describe('fetchTaskBundle', () => {
 
   it('fetches replies when ClickUp returns reply_count as a string', async () => {
     const client = makeClient({
-      getAllTaskComments: vi.fn().mockResolvedValue([
+      getTaskComments: vi.fn().mockResolvedValue([
         {
           id: 'c1',
           comment_text: 'root',
