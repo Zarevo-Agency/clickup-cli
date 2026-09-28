@@ -752,29 +752,23 @@ export class ClickUpClient {
     })
   }
 
-  async getTaskComments(taskId: string): Promise<Comment[]> {
-    const data = await this.request<{ comments: Comment[] }>(this.taskPath(taskId, '/comment'))
-    return readCollectionField<Comment>(data, 'comments', 'task comments')
-  }
-
   /**
-   * Every comment on a task. ClickUp returns 25 per call and pages with
-   * `start` (the oldest returned comment's date) + `start_id`; the cursor
-   * comment is repeated on the next page, so results are deduped by id.
+   * Every comment behind a task, list or view comment endpoint. ClickUp returns
+   * 25 per call, newest first, and pages with `start` (the oldest returned
+   * comment's date) + `start_id`; the cursor comment is repeated on the next
+   * page, so results are deduped by id. `buildPath` gets `''` or the cursor query.
    */
-  async getAllTaskComments(taskId: string): Promise<Comment[]> {
+  private async getAllComments(
+    buildPath: (query: string) => string,
+    context: string,
+  ): Promise<Comment[]> {
     const PAGE_SIZE = 25
     const seen = new Set<string>()
     const all: Comment[] = []
-    let cursor: { start: string; startId: string } | undefined
+    let query = ''
     for (;;) {
-      const qs = cursor
-        ? `?start=${encodeURIComponent(cursor.start)}&start_id=${encodeURIComponent(cursor.startId)}`
-        : ''
-      const data = await this.request<{ comments: Comment[] }>(
-        this.taskPath(taskId, `/comment${qs}`),
-      )
-      const page = readCollectionField<Comment>(data, 'comments', 'task comments')
+      const data = await this.request<{ comments: Comment[] }>(buildPath(query))
+      const page = readCollectionField<Comment>(data, 'comments', context)
       let added = 0
       for (const c of page) {
         if (seen.has(c.id)) continue
@@ -784,9 +778,13 @@ export class ClickUpClient {
       }
       if (page.length < PAGE_SIZE || added === 0) break
       const last = page[page.length - 1]!
-      cursor = { start: last.date, startId: last.id }
+      query = `?start=${encodeURIComponent(last.date)}&start_id=${encodeURIComponent(last.id)}`
     }
     return all
+  }
+
+  async getTaskComments(taskId: string): Promise<Comment[]> {
+    return this.getAllComments(query => this.taskPath(taskId, `/comment${query}`), 'task comments')
   }
 
   async getTasksFromList(
@@ -1965,8 +1963,7 @@ export class ClickUpClient {
   }
 
   async getListComments(listId: string): Promise<Comment[]> {
-    const data = await this.request<{ comments: Comment[] }>(`/list/${listId}/comment`)
-    return readCollectionField<Comment>(data, 'comments', 'list comments')
+    return this.getAllComments(query => `/list/${listId}/comment${query}`, 'list comments')
   }
 
   async postListComment(
@@ -1987,8 +1984,7 @@ export class ClickUpClient {
 
   async getViewComments(viewId: string): Promise<Comment[]> {
     const id = normalizeViewId(viewId)
-    const data = await this.request<{ comments: Comment[] }>(`/view/${id}/comment`)
-    return readCollectionField<Comment>(data, 'comments', 'view comments')
+    return this.getAllComments(query => `/view/${id}/comment${query}`, 'view comments')
   }
 
   async postViewComment(

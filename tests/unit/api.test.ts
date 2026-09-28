@@ -2630,7 +2630,7 @@ describe('rate limiter integration', () => {
   })
 })
 
-describe('getAllTaskComments pagination', () => {
+describe('comment pagination', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', mockFetch)
     vi.clearAllMocks()
@@ -2649,9 +2649,12 @@ describe('getAllTaskComments pagination', () => {
     }
   }
 
+  function fullPage(from: number) {
+    return Array.from({ length: 25 }, (_, i) => comment(from + i))
+  }
+
   it('follows start/start_id cursors until a short page and dedupes the overlap', async () => {
-    const page1 = Array.from({ length: 25 }, (_, i) => comment(i))
-    // ClickUp includes the cursor comment again on the next page.
+    const page1 = fullPage(0)
     const page2 = [comment(24), ...Array.from({ length: 10 }, (_, i) => comment(25 + i))]
     mockFetch
       .mockReturnValueOnce(mockResponse({ comments: page1 }))
@@ -2659,32 +2662,84 @@ describe('getAllTaskComments pagination', () => {
 
     const { ClickUpClient } = await import('../../src/api.js')
     const client = new ClickUpClient({ apiToken: 'pk_test' })
-    const all = await client.getAllTaskComments('t1')
+    const all = await client.getTaskComments('t1')
 
     expect(mockFetch).toHaveBeenCalledTimes(2)
+    expect(String(mockFetch.mock.calls[0]![0])).toMatch(/\/task\/t1\/comment$/)
     const secondUrl = String(mockFetch.mock.calls[1]![0])
-    expect(secondUrl).toContain('start=' + encodeURIComponent('976'))
-    expect(secondUrl).toContain('start_id=c24')
+    expect(secondUrl).toContain('/task/t1/comment?start=976&start_id=c24')
     expect(all.map(c => c.id)).toEqual([...page1, ...page2.slice(1)].map(c => c.id))
+  })
+
+  it('advances the cursor across several full pages', async () => {
+    const page2 = [comment(24), ...fullPage(25).slice(0, 24)]
+    const page3 = [comment(48), comment(49)]
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ comments: fullPage(0) }))
+      .mockReturnValueOnce(mockResponse({ comments: page2 }))
+      .mockReturnValueOnce(mockResponse({ comments: page3 }))
+
+    const { ClickUpClient } = await import('../../src/api.js')
+    const client = new ClickUpClient({ apiToken: 'pk_test' })
+    const all = await client.getTaskComments('t1')
+
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+    expect(String(mockFetch.mock.calls[2]![0])).toContain('start=952&start_id=c48')
+    expect(all.map(c => c.id)).toEqual(Array.from({ length: 50 }, (_, i) => `c${i}`))
   })
 
   it('returns a single short page without a second request', async () => {
     mockFetch.mockReturnValueOnce(mockResponse({ comments: [comment(0), comment(1)] }))
     const { ClickUpClient } = await import('../../src/api.js')
     const client = new ClickUpClient({ apiToken: 'pk_test' })
-    const all = await client.getAllTaskComments('t1')
+    const all = await client.getTaskComments('t1')
     expect(mockFetch).toHaveBeenCalledTimes(1)
     expect(all).toHaveLength(2)
   })
 
   it('stops when a full page yields no new comments', async () => {
-    const page = Array.from({ length: 25 }, (_, i) => comment(i))
-    mockFetch.mockReturnValue(mockResponse({ comments: page }))
+    mockFetch.mockReturnValue(mockResponse({ comments: fullPage(0) }))
     const { ClickUpClient } = await import('../../src/api.js')
     const client = new ClickUpClient({ apiToken: 'pk_test' })
-    const all = await client.getAllTaskComments('t1')
+    const all = await client.getTaskComments('t1')
     expect(all).toHaveLength(25)
     expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps custom task ID params on follow-up pages', async () => {
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ comments: fullPage(0) }))
+      .mockReturnValueOnce(mockResponse({ comments: [] }))
+    const { ClickUpClient } = await import('../../src/api.js')
+    const client = new ClickUpClient({ apiToken: 'pk_test', teamId: 'team1' })
+    await client.getTaskComments('PROJ-1')
+    expect(String(mockFetch.mock.calls[1]![0])).toContain(
+      '/task/PROJ-1/comment?start=976&start_id=c24&custom_task_ids=true&team_id=team1',
+    )
+  })
+
+  it('pages list comments with the same cursor', async () => {
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ comments: fullPage(0) }))
+      .mockReturnValueOnce(mockResponse({ comments: [comment(24), comment(25)] }))
+    const { ClickUpClient } = await import('../../src/api.js')
+    const client = new ClickUpClient({ apiToken: 'pk_test' })
+    const all = await client.getListComments('l1')
+    expect(String(mockFetch.mock.calls[1]![0])).toContain('/list/l1/comment?start=976&start_id=c24')
+    expect(all).toHaveLength(26)
+  })
+
+  it('pages view comments with the same cursor on a normalized view ID', async () => {
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ comments: fullPage(0) }))
+      .mockReturnValueOnce(mockResponse({ comments: [comment(24), comment(25)] }))
+    const { ClickUpClient } = await import('../../src/api.js')
+    const client = new ClickUpClient({ apiToken: 'pk_test' })
+    const all = await client.getViewComments('https://app.clickup.com/1/v/gr/v1-2')
+    expect(String(mockFetch.mock.calls[1]![0])).toContain(
+      '/view/v1-2/comment?start=976&start_id=c24',
+    )
+    expect(all).toHaveLength(26)
   })
 })
 

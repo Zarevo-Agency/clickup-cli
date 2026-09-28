@@ -65,6 +65,8 @@ Status: :white_check_mark: implemented | :construction: planned | :no_entry_sign
 | List comments (view)     | `cup view-comments <viewId>`           | :white_check_mark: |
 | Post comment (view)      | `cup view-comment <viewId>`            | :white_check_mark: |
 
+Comment reads (`comments`, `activity`, `list-comments`, `view-comments`, `comment-delete --task --mine`, `export`) page through all comments, not just the latest 25.
+
 ## Checklists
 
 | Feature          | Command                                   | Status             |

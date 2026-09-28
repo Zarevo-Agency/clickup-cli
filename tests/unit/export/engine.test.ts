@@ -24,7 +24,7 @@ function makeClient(tasks: Record<string, ReturnType<typeof task>>) {
       if (!t) throw new Error(`no such task ${id}`)
       return t
     }),
-    getAllTaskComments: vi.fn().mockResolvedValue([]),
+    getTaskComments: vi.fn().mockResolvedValue([]),
     getThreadedComments: vi.fn().mockResolvedValue([]),
   }
 }

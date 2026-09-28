@@ -9,7 +9,7 @@ const mockGetMyTasks = vi.fn()
 const mockGetTeams = vi.fn()
 const mockGetSpaces = vi.fn()
 const mockGetTaskForExport = vi.fn()
-const mockGetAllTaskComments = vi.fn()
+const mockGetTaskComments = vi.fn()
 const mockGetThreadedComments = vi.fn()
 const mockGetCustomTaskTypes = vi.fn()
 const ctorArgs: unknown[] = []
@@ -27,7 +27,7 @@ vi.mock('../../../src/api.js', async importOriginal => {
         getTeams: mockGetTeams,
         getSpaces: mockGetSpaces,
         getTaskForExport: mockGetTaskForExport,
-        getAllTaskComments: mockGetAllTaskComments,
+        getTaskComments: mockGetTaskComments,
         getThreadedComments: mockGetThreadedComments,
         getCustomTaskTypes: mockGetCustomTaskTypes,
       }
@@ -68,7 +68,7 @@ describe('exportUser', () => {
         f.archived ? [] : [task('t1'), task('t2')],
       )
     mockGetTaskForExport.mockReset().mockImplementation(async (id: string) => task(id))
-    mockGetAllTaskComments.mockReset().mockResolvedValue([])
+    mockGetTaskComments.mockReset().mockResolvedValue([])
     mockGetThreadedComments.mockReset().mockResolvedValue([])
   })
 
@@ -195,7 +195,7 @@ describe('exportAll', () => {
       .mockReset()
       .mockResolvedValue([{ id: 'p1', doc_id: 'd1', name: 'P', content: 'x' }])
     mockGetTaskForExport.mockReset().mockImplementation(async (id: string) => task(id))
-    mockGetAllTaskComments.mockReset().mockResolvedValue([])
+    mockGetTaskComments.mockReset().mockResolvedValue([])
     mockGetThreadedComments.mockReset().mockResolvedValue([])
     const { ClickUpClient } = await import('../../../src/api.js')
     ;(ClickUpClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function () {
@@ -212,7 +212,7 @@ describe('exportAll', () => {
         getAllDocs: mockGetAllDocs,
         getDocPages: mockGetDocPages,
         getTaskForExport: mockGetTaskForExport,
-        getAllTaskComments: mockGetAllTaskComments,
+        getTaskComments: mockGetTaskComments,
         getThreadedComments: mockGetThreadedComments,
         getCustomTaskTypes: mockGetCustomTaskTypes,
       }

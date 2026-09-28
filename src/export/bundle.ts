@@ -16,7 +16,7 @@ export interface TaskBundle {
 
 type BundleClient = Pick<
   ClickUpClient,
-  'getTaskForExport' | 'getAllTaskComments' | 'getThreadedComments'
+  'getTaskForExport' | 'getTaskComments' | 'getThreadedComments'
 >
 
 function replyCount(c: Comment): number {
@@ -27,7 +27,7 @@ function replyCount(c: Comment): number {
 export async function fetchTaskBundle(client: BundleClient, taskId: string): Promise<TaskBundle> {
   const [task, rawComments] = await Promise.all([
     client.getTaskForExport(taskId),
-    client.getAllTaskComments(taskId),
+    client.getTaskComments(taskId),
   ])
   const comments: ExportedComment[] = await Promise.all(
     rawComments.map(async c => ({

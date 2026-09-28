@@ -428,7 +428,7 @@ cup subtasks abc123 --json
 
 ### `cup comments <id>`
 
-List comments on a task. Formatted view in terminal, Markdown when piped.
+List all comments on a task, newest first. ClickUp returns 25 comments per request; `cup` pages through all of them. Formatted view in terminal, Markdown when piped.
 
 ```bash
 cup comments abc123
@@ -437,7 +437,7 @@ cup comments abc123 --json
 
 ### `cup activity <id>`
 
-View task details and comment history together. Combines `cup task` and `cup comments` into a single view.
+View task details and comment history together. Combines `cup task` and `cup comments` into a single view, including all comments (not just the latest 25).
 
 ```bash
 cup activity abc123
@@ -1018,7 +1018,7 @@ cup comment-edit <commentId> -m "Updated" --json
 
 ### `cup comment-delete [commentId]`
 
-Delete a comment by ID, or use `--task` with `--mine` to find and delete your comment from a task.
+Delete a comment by ID, or use `--task` with `--mine` to find and delete your comment from a task. `--task` searches all of the task's comments, not just the latest 25.
 
 ```bash
 cup comment-delete 12345
@@ -1873,7 +1873,7 @@ cup key-result-delete kr123 --json
 
 ### `cup list-comments <listId>`
 
-List comments on a list. Shows author, date, and text for each comment.
+List all comments on a list, newest first (`cup` pages past ClickUp's 25-per-request limit). Shows author, date, and text for each comment.
 
 ```bash
 cup list-comments 12345
@@ -1904,7 +1904,7 @@ cup list-comment 12345 -m "Update" --json
 
 ### `cup view-comments <viewId>`
 
-List comments on a view. Shows author, date, and text for each comment.
+List all comments on a view, newest first (`cup` pages past ClickUp's 25-per-request limit). Shows author, date, and text for each comment.
 
 ```bash
 cup view-comments v12345
