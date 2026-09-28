@@ -241,9 +241,9 @@ ${renderZshTopLevelCommands(name)}
             '--name[Filter by name]:query:' \\
             '--type[Filter by task type]:type:' \\
             '--all[Include all tasks, not just mine]' \\
-            '--include-closed[Include done/closed tasks]' \\
+            '--include-closed[Include closed-type statuses]' \\
             '--assignee[Filter by assignee]:user_id:' \\
-            '--tag[Filter by tag name]:tag:' \\
+            '--tag[Filter by tag names, comma-separated]:tag:' \\
             '--due-before[Tasks due before date]:date:' \\
             '--due-after[Tasks due after date]:date:' \\
             '--created-after[Tasks created after date]:date:' \\
@@ -368,9 +368,9 @@ ${renderZshTopLevelCommands(name)}
             '--list[Filter by list ID]:list_id:' \\
             '--space[Filter by space ID]:space_id:' \\
             '--all[Search all workspace tasks, not just mine]' \\
-            '--include-closed[Include done/closed tasks in search]' \\
+            '--include-closed[Include closed-type statuses]' \\
             '--assignee[Filter by assignee]:user_id:' \\
-            '--tag[Filter by tag name]:tag:' \\
+            '--tag[Filter by tag names, comma-separated]:tag:' \\
             '--due-before[Tasks due before date]:date:' \\
             '--due-after[Tasks due after date]:date:' \\
             '--created-after[Tasks created after date]:date:' \\

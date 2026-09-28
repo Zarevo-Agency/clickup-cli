@@ -190,6 +190,13 @@ describe('setCustomField', () => {
     )
   })
 
+  it('says (none) when the task has no custom fields', async () => {
+    const { findFieldByName } = await import('../../../src/commands/field.js')
+    expect(() => findFieldByName([], 'Score')).toThrow(
+      'Field "Score" not found. Available fields: (none)',
+    )
+  })
+
   it('matches field name case-insensitively', async () => {
     const { setCustomField } = await import('../../../src/commands/field.js')
     await setCustomField(config, 'task1', { set: ['notes', 'lowercase match'] })

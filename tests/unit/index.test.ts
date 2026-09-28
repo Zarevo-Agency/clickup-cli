@@ -430,6 +430,80 @@ describe('error output', () => {
   })
 })
 
+describe('empty time entry responses and cup api errors', () => {
+  const fetchMock = vi.fn()
+
+  function respond(body: unknown, status = 200) {
+    return Promise.resolve(new Response(JSON.stringify(body), { status }))
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockLoadConfig.mockClear().mockReturnValue(config)
+    mockIsTTY.mockReset().mockReturnValue(false)
+    mockShouldOutputJson.mockReset().mockImplementation((force: boolean) => force)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.exitCode = undefined
+    fetchMock.mockReset().mockImplementation(() => respond({ data: null }))
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    process.exitCode = undefined
+  })
+
+  async function run(args: string[]) {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(args, { from: 'user' })
+  }
+
+  it('time stop without a running timer is an error, not a crash', async () => {
+    await run(['time', 'stop'])
+    expect(console.log).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledExactlyOnceWith('No timer running')
+    expect(process.exitCode).toBe(1)
+  })
+
+  it('time delete of an unknown entry fails instead of reporting it deleted', async () => {
+    await run(['time', 'delete', 'te9', '--json'])
+    expect(console.log).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({ error: { message: 'Time entry te9 not found', status: null, ecode: null } }),
+    )
+    expect(process.exitCode).toBe(1)
+  })
+
+  it('cup api prints local validation errors as one JSON line without --json', async () => {
+    await run(['api', 'DELETE', '/v2/task/abc'])
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({
+        error: {
+          message: 'Destructive operation requires --confirm flag in non-interactive mode',
+          status: null,
+          ecode: null,
+        },
+      }),
+    )
+    expect(process.exitCode).toBe(1)
+  })
+
+  it('cup api prints HTTP errors as one JSON line', async () => {
+    const body = { err: 'Task not found', ECODE: 'ITEM_015' }
+    fetchMock.mockImplementation(() => respond(body, 404))
+    await run(['api', 'GET', '/v2/task/abc'])
+    expect(console.log).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({
+        error: { message: 'Task not found', status: 404, ecode: 'ITEM_015', body },
+      }),
+    )
+    expect(process.exitCode).toBe(1)
+  })
+})
+
 describe('cup field --value-file', () => {
   const tmpFile = join(tmpdir(), `cup-value-file-test-${process.pid}.md`)
 
@@ -766,6 +840,7 @@ describe('cup update and create write paths', () => {
   const mockUpdateTaskApi = vi.fn()
   const mockSetCustomFieldValue = vi.fn()
   const mockCreateTaskFromTemplate = vi.fn()
+  const mockGetUserTimezone = vi.fn()
 
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -776,6 +851,7 @@ describe('cup update and create write paths', () => {
     process.exitCode = undefined
     mockUpdateTaskApi.mockReset().mockResolvedValue({ id: 'task-1', name: 'Task One' })
     mockSetCustomFieldValue.mockReset().mockResolvedValue(undefined)
+    mockGetUserTimezone.mockReset().mockResolvedValue('Europe/Berlin')
     mockCreateTaskFromTemplate
       .mockReset()
       .mockResolvedValue({ id: 't-new', name: 'Task', url: 'https://app.clickup.com/t/t-new' })
@@ -785,7 +861,7 @@ describe('cup update and create write paths', () => {
         ...actual,
         ClickUpClient: vi.fn().mockImplementation(function () {
           return {
-            getUserTimezone: vi.fn().mockResolvedValue(undefined),
+            getUserTimezone: mockGetUserTimezone,
             getMe: vi.fn().mockResolvedValue({ id: 42, username: 'me' }),
             getTask: vi.fn().mockResolvedValue({
               id: 'task-1',
@@ -847,6 +923,26 @@ describe('cup update and create write paths', () => {
       points: null,
     })
     expect(mockSetCustomFieldValue).toHaveBeenCalledWith('task-1', 'f-score', 5)
+  })
+
+  it('update looks up the timezone only when a date has to be parsed', async () => {
+    const { buildProgram } = await loadCli()
+    await buildProgram('cup').parseAsync(['update', 'task-1', '--priority', 'high'], {
+      from: 'user',
+    })
+    await buildProgram('cup').parseAsync(['update', 'task-1', '--due-date', 'none'], {
+      from: 'user',
+    })
+    expect(mockGetUserTimezone).not.toHaveBeenCalled()
+
+    await buildProgram('cup').parseAsync(['update', 'task-1', '--due-date', '2026-03-01'], {
+      from: 'user',
+    })
+    expect(mockGetUserTimezone).toHaveBeenCalledOnce()
+    expect(mockUpdateTaskApi).toHaveBeenLastCalledWith('task-1', {
+      due_date: Date.UTC(2026, 1, 28, 23),
+      due_date_time: false,
+    })
   })
 
   it('create --template reports the flags applied afterwards', async () => {

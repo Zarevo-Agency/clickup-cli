@@ -110,7 +110,7 @@ export function findFieldByName<T extends FieldDescriptor>(fields: readonly T[],
   const lower = name.toLowerCase()
   const match = fields.find(f => f.name.toLowerCase() === lower)
   if (!match) {
-    const available = fields.map(f => f.name).join(', ')
+    const available = fields.map(f => f.name).join(', ') || '(none)'
     throw new Error(`Field "${name}" not found. Available fields: ${available}`)
   }
   return match

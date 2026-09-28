@@ -24,11 +24,29 @@ export interface ParsedDate {
 }
 
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
+const DATE_PREFIX_RE = /^(\d{4})-(\d{2})-(\d{2})/
 const LOCAL_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
 const ISO_WITH_OFFSET_RE =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/
 
+/** Rejects dates that do not exist (month 13, February 30), which Date would roll over. */
+function assertCalendarDate(value: string): void {
+  const match = DATE_PREFIX_RE.exec(value)
+  if (!match) return
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+    throw new Error(
+      `Date must be in YYYY-MM-DD, YYYY-MM-DDTHH:MM[:SS], or full ISO 8601 format (no such calendar date: ${match[0]})`,
+    )
+  }
+}
+
 export function parseDueDate(value: string, timezone?: string): ParsedDate {
+  assertCalendarDate(value)
+
   // Case 1: date-only (YYYY-MM-DD) — interpreted as midnight in the given timezone.
   if (DATE_ONLY_RE.test(value)) {
     const parts = value.split('-').map(Number)
@@ -135,14 +153,15 @@ export async function resolveAssigneeId(client: ClickUpClient, value: string): P
   return parseAssigneeId(value)
 }
 
-/** Flatten a repeatable, comma-separated flag value into trimmed, non-empty entries. */
+/** Flatten a repeatable, comma-separated flag value into trimmed, non-empty, unique entries. */
 export function splitIdList(value: string | readonly string[] | undefined): string[] {
   if (value === undefined) return []
   const values = typeof value === 'string' ? [value] : value
-  return values
+  const ids = values
     .flatMap(v => v.split(','))
     .map(v => v.trim())
     .filter(Boolean)
+  return [...new Set(ids)]
 }
 
 /** Expand a user flag value and replace "me" with the current user's ID. */

@@ -272,14 +272,13 @@ describe('editDocPage', () => {
   })
 
   it('edits a doc page with name and content', async () => {
-    const page = { id: 'p1', doc_id: 'd1', name: 'Updated' }
-    mockEditDocPage.mockResolvedValue(page)
+    mockEditDocPage.mockResolvedValue(undefined)
     const { editDocPage } = await import('../../../src/commands/doc.js')
     const result = await editDocPage(mockConfig, 'd1', 'p1', {
       name: 'Updated',
       content: '# New',
     })
-    expect(result).toEqual(page)
+    expect(result).toEqual({ id: 'p1', doc_id: 'd1', name: 'Updated' })
     expect(mockEditDocPage).toHaveBeenCalledWith('team1', 'd1', 'p1', {
       name: 'Updated',
       content: '# New',
@@ -294,7 +293,7 @@ describe('editDocPage', () => {
   })
 
   it('maps subtitle, edit mode and content format to the API fields', async () => {
-    mockEditDocPage.mockResolvedValue({ id: 'p1', doc_id: 'd1', name: 'Page' })
+    mockEditDocPage.mockResolvedValue(undefined)
     const { editDocPage } = await import('../../../src/commands/doc.js')
     await editDocPage(mockConfig, 'd1', 'p1', {
       subTitle: 'Sub',
@@ -310,11 +309,12 @@ describe('editDocPage', () => {
     })
   })
 
-  it('updates only the subtitle', async () => {
-    mockEditDocPage.mockResolvedValue({ id: 'p1', doc_id: 'd1', name: 'Page' })
+  it('updates only the subtitle and reports the page without a name', async () => {
+    mockEditDocPage.mockResolvedValue(undefined)
     const { editDocPage } = await import('../../../src/commands/doc.js')
-    await editDocPage(mockConfig, 'd1', 'p1', { subTitle: 'Sub' })
+    const result = await editDocPage(mockConfig, 'd1', 'p1', { subTitle: 'Sub' })
     expect(mockEditDocPage).toHaveBeenCalledWith('team1', 'd1', 'p1', { sub_title: 'Sub' })
+    expect(result).toEqual({ id: 'p1', doc_id: 'd1' })
   })
 
   it.each([

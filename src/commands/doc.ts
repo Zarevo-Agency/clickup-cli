@@ -212,12 +212,19 @@ export interface DocPageEditOptions {
   contentFormat?: string
 }
 
+/** The edited page as far as cup knows it; ClickUp's edit endpoint returns an empty body. */
+export interface EditedDocPage {
+  id: string
+  doc_id: string
+  name?: string
+}
+
 export async function editDocPage(
   config: Config,
   docId: string,
   pageId: string,
   options: DocPageEditOptions,
-): Promise<DocPage> {
+): Promise<EditedDocPage> {
   if (!options.name && !options.subTitle && !options.content) {
     throw new Error('Provide at least one of: --name, --sub-title, -c/--content, --content-file')
   }
@@ -244,7 +251,12 @@ export async function editDocPage(
     updates.content_format = parseContentFormat(options.contentFormat)
   }
   const client = new ClickUpClient(config)
-  return client.editDocPage(config.teamId, docId, pageId, updates)
+  await client.editDocPage(config.teamId, docId, pageId, updates)
+  return {
+    id: pageId,
+    doc_id: docId,
+    ...(updates.name !== undefined ? { name: updates.name } : {}),
+  }
 }
 
 /**

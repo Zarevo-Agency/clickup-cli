@@ -1438,10 +1438,13 @@ export class ClickUpClient {
     return data.data
   }
 
+  /** Stops the running timer; ClickUp answers 200 with `data: null` when none is running. */
   async stopTimeEntry(teamId: string): Promise<TimeEntry> {
-    const data = await this.request<{ data: TimeEntry }>(`/team/${teamId}/time_entries/stop`, {
-      method: 'POST',
-    })
+    const data = await this.request<{ data: TimeEntry | null }>(
+      `/team/${teamId}/time_entries/stop`,
+      { method: 'POST' },
+    )
+    if (data.data == null) throw new Error('No timer running')
     return data.data
   }
 
@@ -1516,10 +1519,11 @@ export class ClickUpClient {
   ): Promise<TimeEntry> {
     const body = updates.tid ? { ...updates, tid: normalizeTaskId(updates.tid) } : updates
     const query = updates.tid ? this.customIdQueryParams(updates.tid) : ''
-    const data = await this.request<{ data: TimeEntry }>(
+    const data = await this.request<{ data: TimeEntry | null }>(
       `/team/${teamId}/time_entries/${timeEntryId}${query}`,
       { method: 'PUT', body: JSON.stringify(body) },
     )
+    if (data.data == null) throw new Error(`Time entry ${timeEntryId} not found`)
     return data.data
   }
 
@@ -1575,9 +1579,11 @@ export class ClickUpClient {
   }
 
   async deleteTimeEntry(teamId: string, timeEntryId: string): Promise<void> {
-    await this.request<Record<string, never>>(`/team/${teamId}/time_entries/${timeEntryId}`, {
-      method: 'DELETE',
-    })
+    const data = await this.request<{ data?: TimeEntry | null }>(
+      `/team/${teamId}/time_entries/${timeEntryId}`,
+      { method: 'DELETE' },
+    )
+    if (data.data === null) throw new Error(`Time entry ${timeEntryId} not found`)
   }
 
   async createTaskAttachment(taskId: string, filePath: string): Promise<Attachment> {
@@ -1683,16 +1689,17 @@ export class ClickUpClient {
     })
   }
 
+  /** Edit a page. ClickUp answers with an empty object, so nothing is returned. */
   async editDocPage(
     workspaceId: string,
     docId: string,
     pageId: string,
     updates: DocPageEdit,
-  ): Promise<DocPage> {
-    return this.requestV3<DocPage>(`/workspaces/${workspaceId}/docs/${docId}/pages/${pageId}`, {
-      method: 'PUT',
-      body: JSON.stringify(updates),
-    })
+  ): Promise<void> {
+    await this.requestV3<Record<string, never>>(
+      `/workspaces/${workspaceId}/docs/${docId}/pages/${pageId}`,
+      { method: 'PUT', body: JSON.stringify(updates) },
+    )
   }
 
   async getDoc(workspaceId: string, docId: string): Promise<Doc> {

@@ -25,6 +25,7 @@ import type { TaskFilterFlags } from './commands/task-filters.js'
 import {
   updateTask,
   buildUpdatePayload,
+  isClearValue,
   resolveGroupId,
   resolveUserIds,
   splitIdList,
@@ -286,13 +287,17 @@ function receivedJsonFlag(args: unknown[]): boolean {
   return command instanceof Command && command.optsWithGlobals<{ json?: unknown }>().json === true
 }
 
-/** Runs a command action and reports failures on stderr (as one JSON line in JSON mode) with exit code 1. */
+/**
+ * Runs a command action and reports failures on stderr (as one JSON line in JSON mode,
+ * or always with `alwaysJson`) with exit code 1.
+ */
 function wrapAction<T extends unknown[]>(
   fn: (...args: T) => Promise<void>,
+  { alwaysJson = false }: { alwaysJson?: boolean } = {},
 ): (...args: T) => Promise<void> {
   return async (...args: T) => {
     await fn(...args).catch((err: unknown) => {
-      if (shouldOutputJson(receivedJsonFlag(args))) {
+      if (alwaysJson || shouldOutputJson(receivedJsonFlag(args))) {
         console.error(JSON.stringify(toErrorJson(err)))
       } else {
         console.error(err instanceof Error ? err.message : String(err))
@@ -575,7 +580,10 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           })
           const config = loadConfig(getProfileName())
           const client = new ClickUpClient(config)
-          const timezone = await client.getUserTimezone()
+          const needsTimezone = [opts.dueDate, opts.startDate].some(
+            date => date !== undefined && !isClearValue(date),
+          )
+          const timezone = needsTimezone ? await client.getUserTimezone() : undefined
           opts.assignee = await resolveUserIds(client, opts.assignee)
           opts.removeAssignee = await resolveUserIds(client, opts.removeAssignee)
           opts.watcher = await resolveUserIds(client, opts.watcher)
@@ -2999,8 +3007,10 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
           })
           if (shouldOutputJson(opts.json ?? false)) {
             console.log(JSON.stringify(page, null, 2))
-          } else {
+          } else if (page.name !== undefined) {
             console.log(`Updated page "${page.name}" (${page.id})`)
+          } else {
+            console.log(`Updated page ${page.id} in doc ${page.doc_id}`)
           }
         },
       ),
@@ -4392,16 +4402,19 @@ export function buildProgram(programName = basename(process.argv[1] ?? 'cup')): 
     .option('--confirm', 'Required for DELETE requests')
     .option('--json', 'Accepted for consistency; output is always JSON')
     .action(
-      wrapAction(async (method: string, path: string, opts: ApiCommandOptions) => {
-        const config = loadConfig(getProfileName())
-        const result = await runApiCommand(config, method, path, opts)
-        if (result.ok) {
-          console.log(JSON.stringify(result.body, null, 2))
-        } else {
-          console.error(JSON.stringify(result.error, null, 2))
-          process.exitCode = 1
-        }
-      }),
+      wrapAction(
+        async (method: string, path: string, opts: ApiCommandOptions) => {
+          const config = loadConfig(getProfileName())
+          const result = await runApiCommand(config, method, path, opts)
+          if (result.ok) {
+            console.log(JSON.stringify(result.body, null, 2))
+          } else {
+            console.error(JSON.stringify(result.error))
+            process.exitCode = 1
+          }
+        },
+        { alwaysJson: true },
+      ),
     )
 
   /**

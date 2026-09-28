@@ -1378,6 +1378,15 @@ describe('time tracking API methods', () => {
     )
   })
 
+  it('treats data: null from update, delete and stop as not found / no timer', async () => {
+    mockFetch.mockImplementation(() => mockResponse({ data: null }))
+    await expect(client.updateTimeEntry('team1', 'te9', { description: 'x' })).rejects.toThrow(
+      'Time entry te9 not found',
+    )
+    await expect(client.deleteTimeEntry('team1', 'te9')).rejects.toThrow('Time entry te9 not found')
+    await expect(client.stopTimeEntry('team1')).rejects.toThrow('No timer running')
+  })
+
   it('updateTimeEntry sends PUT to /team/{teamId}/time_entries/{id}', async () => {
     const entry = { id: 'te1', duration: 7200000 }
     mockFetch.mockReturnValue(mockResponse({ data: entry }))
@@ -1625,10 +1634,8 @@ describe('Docs API v3 methods', () => {
   })
 
   it('editDocPage sends PUT to v3 /workspaces/{id}/docs/{docId}/pages/{pageId}', async () => {
-    const page = { id: 'p1', doc_id: 'd1', name: 'Updated' }
-    mockFetch.mockReturnValue(mockResponse(page))
-    const result = await client.editDocPage('w1', 'd1', 'p1', { name: 'Updated', content: '# New' })
-    expect(result).toEqual(page)
+    mockFetch.mockReturnValue(mockResponse({}))
+    await client.editDocPage('w1', 'd1', 'p1', { name: 'Updated', content: '# New' })
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('https://api.clickup.com/api/v3/workspaces/w1/docs/d1/pages/p1'),
       expect.objectContaining({

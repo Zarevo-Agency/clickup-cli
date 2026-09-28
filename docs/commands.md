@@ -352,15 +352,15 @@ cup tasks --full                       # raw ClickUp task objects
 | Flag                        | Description                                                                                                   |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `--name <partial>`          | Filter by name (case-insensitive contains, client-side)                                                       |
-| `--status <status>`         | Filter by status (repeatable)                                                                                 |
+| `--status <status>`         | Filter by status (repeatable, matches any)                                                                    |
 | `--list <listId>`           | Filter by list ID (repeatable, comma-separated)                                                               |
 | `--space <spaceId\|name>`   | Filter by space ID or name, partial match (repeatable, comma-separated)                                       |
 | `--folder <folderId\|name>` | Filter by folder ID or name, partial match, searched in `--space` or all spaces (repeatable, comma-separated) |
 | `--type <type>`             | Filter by task type (e.g. "task", "initiative", custom name/ID), sent as `custom_items[]`                     |
 | `--all`                     | Include all tasks, not just mine                                                                              |
-| `--include-closed`          | Include done/closed tasks                                                                                     |
+| `--include-closed`          | Include statuses of type "closed" (type "done" statuses are always returned)                                  |
 | `--assignee <userId>`       | Filter by assignee: user ID or `me` (repeatable, comma-separated)                                             |
-| `--tag <tag>`               | Filter by tag name (repeatable)                                                                               |
+| `--tag <tag>`               | Filter by tag name (repeatable, comma-separated, matches any)                                                 |
 | `--due-before <date>`       | Tasks due before date                                                                                         |
 | `--due-after <date>`        | Tasks due after date                                                                                          |
 | `--created-after <date>`    | Tasks created after date                                                                                      |
@@ -373,12 +373,16 @@ cup tasks --full                       # raw ClickUp task objects
 | `--no-subtasks`             | Exclude subtasks (cup includes them by default)                                                               |
 | `--where <expr>`            | Custom field filter `"<field> <operator> [value]"` (repeatable, see below)                                    |
 | `--field <name> <value>`    | Custom field filter, same as `--where "<name> = <value>"`                                                     |
-| `--order-by <field>`        | Sort by `id`, `created`, `updated` or `due_date` (ClickUp default: `created`)                                 |
-| `--reverse`                 | Reverse the sort order                                                                                        |
+| `--order-by <field>`        | Sort by `id`, `created`, `updated` or `due_date`, descending (ClickUp default: `created`)                     |
+| `--reverse`                 | Sort ascending instead                                                                                        |
 | `--full`                    | Print raw ClickUp task objects as JSON (implies JSON output)                                                  |
 | `--json`                    | Force JSON output                                                                                             |
 
 Dates accept `YYYY-MM-DD` (midnight), `YYYY-MM-DDTHH:MM[:SS]` or ISO 8601 with offset. Dates without an offset are read in your ClickUp user timezone.
+
+Several `--status` values, or several `--tag` values, match tasks that have any of them. Different filters combine with AND.
+
+`--include-closed` maps to ClickUp's `include_closed`, which only concerns statuses of type "closed". Tasks in statuses of type "done" (for example "closed lost") are returned without it.
 
 Without `--all`, your own user ID is always sent as an assignee filter as well, also when `--assignee` is given. Use `--all --assignee <id>` to filter by other people only.
 
@@ -386,15 +390,15 @@ Without `--all`, your own user ID is always sent as an assignee filter as well, 
 
 `--where "<field> <operator> [value]"` filters by custom field values server-side. The field is a name (case-insensitive, may contain spaces) or a field ID. Repeat the flag to combine filters (all must match).
 
-| Operator                        | Meaning                                           |
-| ------------------------------- | ------------------------------------------------- |
-| `=`                             | Equals; for text fields "contains"                |
-| `==` / `!==`                    | Exact match / no exact match (text)               |
-| `!=`                            | Not equal; for text fields "does not contain"     |
-| `<` `<=` `>` `>=`               | Comparisons (numbers, dates)                      |
-| `IS NULL` / `IS NOT NULL`       | Field is empty / set (takes no value)             |
-| `RANGE`                         | Between two comma-separated values: `RANGE 10,20` |
-| `ANY` `ALL` `NOT ANY` `NOT ALL` | Comma-separated values: `ANY Proposal,Won`        |
+| Operator                        | Meaning                                            |
+| ------------------------------- | -------------------------------------------------- |
+| `=`                             | Equals; for text fields "contains"                 |
+| `==` / `!==`                    | Exact match / no exact match (text)                |
+| `!=`                            | Not equal; for text fields "does not contain"      |
+| `<` `<=` `>` `>=`               | Comparisons (numbers, dates)                       |
+| `IS NULL` / `IS NOT NULL`       | Field is empty / set (takes no value)              |
+| `RANGE`                         | Between two values: `RANGE 10,20` or `RANGE 10 20` |
+| `ANY` `ALL` `NOT ANY` `NOT ALL` | Comma-separated values: `ANY Proposal,Won`         |
 
 Values are converted by field type: dropdown options (by name, ID or orderindex) are sent as their `orderindex`, label options as their option ID, numbers and currency become numbers, dates use the formats above or Unix ms, checkboxes take `true`/`false`, people fields take user IDs or `me`. Label fields do not support `=`; use `ANY` or `ALL`. Other types are sent as text.
 
@@ -1343,7 +1347,7 @@ cup time start abc123 --json
 
 ### `cup time stop`
 
-Stop the currently running timer.
+Stop the currently running timer. Without a running timer it fails with "No timer running" (exit code 1).
 
 ```bash
 cup time stop
@@ -1427,7 +1431,7 @@ cup time list --days 7 --json
 
 ### `cup time update <timeEntryId>`
 
-Update a time entry. Provide at least one flag besides `--json`.
+Update a time entry. Provide at least one flag besides `--json`. An unknown ID fails with "Time entry <id> not found" (exit code 1).
 
 ClickUp needs start and end together: pass `--start` and `--end`, or one of them with `--duration` (the other bound is computed). ClickUp allows one tag action per request, so `--tag-add` and `--tag-remove` cannot be combined. Tag names are matched against existing time entry tags like in `cup time log`.
 
@@ -1457,7 +1461,7 @@ cup time update te123 -d "Review" --duration 1h30m --json
 
 ### `cup time delete <timeEntryId>`
 
-Delete a time entry.
+Delete a time entry. An unknown ID fails with "Time entry <id> not found" (exit code 1).
 
 ```bash
 cup time delete te123
@@ -1651,7 +1655,7 @@ cup doc-page-create abc123 "Page" --json
 
 ### `cup doc-page-edit <docId> <pageId>`
 
-Edit a doc page name, subtitle or content. Provide at least `--name`, `--sub-title`, `--content`, or `--content-file`. Content replaces the page body unless `--mode append` or `--mode prepend` is given.
+Edit a doc page name, subtitle or content. Provide at least `--name`, `--sub-title`, `--content`, or `--content-file`. Content replaces the page body unless `--mode append` or `--mode prepend` is given. ClickUp returns no page data for an edit, so `--json` prints `{"id","doc_id"}` plus `name` when `--name` was given; read the page back with `cup doc <docId> <pageId>` to see the result.
 
 ```bash
 cup doc-page-edit abc123 page456 --name "Renamed Section"
@@ -2448,7 +2452,7 @@ cup api POST /v2/list/901200300/task -d '{"name":"x"}' --dry-run
 
 `--max-pages <n>` (default 100) caps the number of requests and prints a warning on stderr when hit; the merged object keeps the last page's `last_page` / `next_cursor` so you can continue. When no pattern is found, the single response is printed with a warning.
 
-**Errors.** A non-2xx response exits with code 1 and prints `{"error":{"status":...,"ecode":...,"message":...,"body":...}}` to stderr. 429 responses are retried for every method; 502/503/504 only for GET, never for writes.
+**Errors.** Errors exit with code 1 and print one JSON line to stderr, with or without `--json`. A non-2xx response prints `{"error":{"message":...,"status":...,"ecode":...,"body":...}}`; errors raised before sending (invalid path, missing `--confirm`, another workspace) print `{"error":{"message":...,"status":null,"ecode":null}}`. 429 responses are retried for every method; 502/503/504 only for GET, never for writes.
 
 **Safety.** `DELETE` needs `--confirm` (in a terminal you are prompted instead). Writes (anything but GET) to `/team/<id>`, `/workspaces/<id>` or with a `team_id` query parameter for a workspace other than the configured one are refused; use `-p <profile>` for other workspaces. `cup api` bypasses cup's status matching and read-back, so read the object back after a write to confirm it.
 

@@ -105,7 +105,7 @@ function collectValues(value: string, previous: string[] | undefined): string[] 
 export function addTaskFilterOptions(command: Command): Command {
   const dateHelp = '(YYYY-MM-DD or YYYY-MM-DDTHH:MM, your ClickUp timezone)'
   return command
-    .option('--status <status>', 'Filter by status (repeatable)', collectValues)
+    .option('--status <status>', 'Filter by status (repeatable, matches any)', collectValues)
     .option('--list <listId>', 'Filter by list ID (repeatable, comma-separated)', collectValues)
     .option(
       '--space <spaceId|name>',
@@ -122,13 +122,20 @@ export function addTaskFilterOptions(command: Command): Command {
       'Filter by task type (e.g. "task", "initiative", or custom type name/ID)',
     )
     .option('--all', 'Include all tasks, not just mine')
-    .option('--include-closed', 'Include done/closed tasks')
+    .option(
+      '--include-closed',
+      'Include tasks in statuses of type "closed" (type "done" statuses are always included)',
+    )
     .option(
       '--assignee <userId>',
       'Filter by assignee: user ID or "me" (repeatable, comma-separated)',
       collectValues,
     )
-    .option('--tag <tag>', 'Filter by tag name (repeatable)', collectValues)
+    .option(
+      '--tag <tag>',
+      'Filter by tag name (repeatable, comma-separated, matches any)',
+      collectValues,
+    )
     .option('--due-before <date>', `Tasks due before date ${dateHelp}`)
     .option('--due-after <date>', `Tasks due after date ${dateHelp}`)
     .option('--created-after <date>', `Tasks created after date ${dateHelp}`)
@@ -145,8 +152,12 @@ export function addTaskFilterOptions(command: Command): Command {
       collectValues,
     )
     .option('--field <nameAndValue...>', 'Filter by custom field: --field "Name" value (same as =)')
-    .addOption(new Option('--order-by <field>', 'Sort order').choices(ORDER_BY_FIELDS))
-    .option('--reverse', 'Reverse the sort order')
+    .addOption(
+      new Option('--order-by <field>', 'Sort field, descending by default').choices(
+        ORDER_BY_FIELDS,
+      ),
+    )
+    .option('--reverse', 'Reverse the sort order (ascending)')
     .option('--full', 'Output raw ClickUp task objects as JSON')
     .option('--json', 'Force JSON output even in terminal')
 }
@@ -165,6 +176,11 @@ function splitList(value: string): string[] {
     .split(',')
     .map(v => v.trim())
     .filter(v => v.length > 0)
+}
+
+/** RANGE bounds: "a,b" or "a b". */
+function splitRange(value: string): string[] {
+  return value.split(/[\s,]+/).filter(v => v.length > 0)
 }
 
 /**
@@ -207,8 +223,8 @@ function buildClause(
     return { field, operator }
   }
   if (!value) throw new Error(`--where "${expr}": ${operator} needs a value`)
-  if (operator === 'RANGE' && splitList(value).length !== 2) {
-    throw new Error(`--where "${expr}": RANGE needs two comma-separated values, e.g. 1,10`)
+  if (operator === 'RANGE' && splitRange(value).length !== 2) {
+    throw new Error(`--where "${expr}": RANGE needs two values, e.g. 1,10 or 1 10`)
   }
   if (LIST_OPERATORS.has(operator) && splitList(value).length === 0) {
     throw new Error(`--where "${expr}": ${operator} needs comma-separated values`)
@@ -321,7 +337,10 @@ export function toCustomFieldFilter(
   }
   const convert = (raw: string) => (field ? convertFieldValue(field, raw, ctx) : raw)
   const raw = clause.value ?? ''
-  if (operator === 'RANGE' || LIST_OPERATORS.has(operator)) {
+  if (operator === 'RANGE') {
+    return { field_id: fieldId, operator, value: splitRange(raw).map(convert) }
+  }
+  if (LIST_OPERATORS.has(operator)) {
     return { field_id: fieldId, operator, value: splitList(raw).map(convert) }
   }
   return { field_id: fieldId, operator, value: convert(raw) }
@@ -501,7 +520,7 @@ export async function resolveTaskFilterFlags(
   if (listIds.length) filters.listIds = listIds
   if (spaceIds.length) filters.spaceIds = spaceIds
   if (folderIds.length) filters.folderIds = folderIds
-  if (flags.tag?.length) filters.tags = flags.tag
+  if (flags.tag?.length) filters.tags = splitIds(flags.tag, '--tag')
   if (flags.all) filters.all = true
   if (flags.includeClosed || flags.doneAfter !== undefined || flags.doneBefore !== undefined) {
     filters.includeClosed = true

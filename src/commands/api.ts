@@ -35,8 +35,9 @@ export interface ApiRequest {
   maxPages?: number
 }
 
+/** Same shape as the JSON errors of other commands, plus the raw response body. */
 export interface ApiErrorOutput {
-  error: { status: number; ecode: string | null; message: string; body: unknown }
+  error: { message: string; status: number; ecode: string | null; body: unknown }
 }
 
 export type ApiResult = { ok: true; body: unknown } | { ok: false; error: ApiErrorOutput }
@@ -266,7 +267,7 @@ export function toApiError(res: RawApiResponse): ApiErrorOutput {
         ? JSON.stringify(raw)
         : res.statusText || `HTTP ${res.status}`
   const ecode = typeof body.ECODE === 'string' ? body.ECODE : null
-  return { error: { status: res.status, ecode, message, body: res.body } }
+  return { error: { message, status: res.status, ecode, body: res.body } }
 }
 
 async function confirmDelete(url: URL): Promise<void> {

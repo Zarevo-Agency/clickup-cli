@@ -83,7 +83,7 @@ describe('parseWhere', () => {
     expect(() => parseWhere('= Won')).toThrow('expected')
     expect(() => parseWhere('Stage =')).toThrow('= needs a value')
     expect(() => parseWhere('Stage IS NULL x')).toThrow('IS NULL takes no value')
-    expect(() => parseWhere('Amount RANGE 5')).toThrow('RANGE needs two comma-separated values')
+    expect(() => parseWhere('Amount RANGE 5')).toThrow('RANGE needs two values')
   })
 })
 
@@ -124,11 +124,13 @@ describe('convertFieldValue', () => {
 
 describe('toCustomFieldFilter', () => {
   it('builds list values for RANGE and ANY', () => {
-    expect(toCustomFieldFilter(parseWhere('Deal Value RANGE 10, 20'), amount, {})).toEqual({
-      field_id: 'f-amount',
-      operator: 'RANGE',
-      value: [10, 20],
-    })
+    for (const range of ['10, 20', '10 20']) {
+      expect(toCustomFieldFilter(parseWhere(`Deal Value RANGE ${range}`), amount, {})).toEqual({
+        field_id: 'f-amount',
+        operator: 'RANGE',
+        value: [10, 20],
+      })
+    }
     expect(toCustomFieldFilter(parseWhere('Topics ANY Alpha,Beta'), labels, {})).toEqual({
       field_id: 'f-labels',
       operator: 'ANY',
@@ -205,7 +207,7 @@ describe('resolveTaskFilterFlags', () => {
     const client = fakeClient()
     const filters = await run(client, {
       status: ['to do', 'in review'],
-      tag: ['hot', 'vip'],
+      tag: ['hot,vip', 'new'],
       list: ['111,112', '113'],
       space: ['100, 200'],
       folder: ['110'],
@@ -213,7 +215,7 @@ describe('resolveTaskFilterFlags', () => {
     })
     expect(filters).toMatchObject({
       statuses: ['to do', 'in review'],
-      tags: ['hot', 'vip'],
+      tags: ['hot', 'vip', 'new'],
       listIds: ['111', '112', '113'],
       spaceIds: ['100', '200'],
       folderIds: ['110'],

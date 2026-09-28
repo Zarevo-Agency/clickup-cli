@@ -171,16 +171,16 @@ Comment reads (`comments`, `activity`, `list-comments`, `view-comments`, `commen
 
 ## Docs
 
-| Feature                                                               | Command                              | Status             |
-| --------------------------------------------------------------------- | ------------------------------------ | ------------------ |
-| Search docs (all results; creator, parent, archived, deleted filters) | `cup docs [query]`                   | :white_check_mark: |
-| View doc / page                                                       | `cup doc <docId> [pageId]`           | :white_check_mark: |
-| All page content                                                      | `cup doc-pages <docId>`              | :white_check_mark: |
-| Create doc (workspace, space, folder or list; visibility)             | `cup doc-create <title>`             | :white_check_mark: |
-| Create page (subtitle, content format)                                | `cup doc-page-create <docId> <name>` | :white_check_mark: |
-| Edit page (replace/append/prepend, subtitle)                          | `cup doc-page-edit <docId> <pageId>` | :white_check_mark: |
-| Delete doc                                                            | `cup doc-delete <docId>`             | :white_check_mark: |
-| Delete page                                                           | `cup doc-page-delete <docId> <pId>`  | :white_check_mark: |
+| Feature                                                               | Command                               | Status                          |
+| --------------------------------------------------------------------- | ------------------------------------- | ------------------------------- |
+| Search docs (all results; creator, parent, archived, deleted filters) | `cup docs [query]`                    | :white_check_mark:              |
+| View doc / page                                                       | `cup doc <docId> [pageId]`            | :white_check_mark:              |
+| All page content                                                      | `cup doc-pages <docId>`               | :white_check_mark:              |
+| Create doc (workspace, space, folder or list; visibility)             | `cup doc-create <title>`              | :white_check_mark:              |
+| Create page (subtitle, content format)                                | `cup doc-page-create <docId> <name>`  | :white_check_mark:              |
+| Edit page (replace/append/prepend, subtitle)                          | `cup doc-page-edit <docId> <pageId>`  | :white_check_mark:              |
+| Delete doc                                                            | `cup doc-delete <docId>` (fails fast) | :no_entry_sign: No API endpoint |
+| Delete page                                                           | `cup doc-page-delete <docId> <pId>`   | :white_check_mark:              |
 
 ## Attachments
 

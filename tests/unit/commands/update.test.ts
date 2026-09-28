@@ -282,6 +282,25 @@ describe('parseDueDate', () => {
     expect(() => parseDueDate('2025-03-15T14')).toThrow('YYYY-MM-DD')
     expect(() => parseDueDate('2025-03-15T25:00')).toThrow('YYYY-MM-DD')
   })
+
+  it.each([
+    '2026-02-30',
+    '2026-13-45',
+    '2026-00-10',
+    '2026-02-29',
+    '2026-04-31T10:00',
+    '2026-02-30T10:00:00Z',
+  ])('rejects the impossible calendar date %s instead of rolling it over', async value => {
+    const { parseDueDate } = await import('../../../src/commands/update.js')
+    expect(() => parseDueDate(value, 'Europe/Berlin')).toThrow(
+      /^Date must be in YYYY-MM-DD.*no such calendar date/,
+    )
+  })
+
+  it('accepts February 29 in leap years', async () => {
+    const { parseDueDate } = await import('../../../src/commands/update.js')
+    expect(parseDueDate('2028-02-29')).toEqual({ ms: Date.UTC(2028, 1, 29), hasTime: false })
+  })
 })
 
 describe('parseAssigneeId', () => {
@@ -552,6 +571,13 @@ describe('buildUpdatePayload', () => {
     const { buildUpdatePayload } = await import('../../../src/commands/update.js')
     const payload = buildUpdatePayload({ assignee: ['1,2', '3'], removeAssignee: ['4'] })
     expect(payload.assignees).toEqual({ add: [1, 2, 3], rem: [4] })
+  })
+
+  it('de-duplicates repeated user IDs', async () => {
+    const { buildUpdatePayload } = await import('../../../src/commands/update.js')
+    const payload = buildUpdatePayload({ assignee: ['1,1', '1', '2'], watcher: '3,3' })
+    expect(payload.assignees).toEqual({ add: [1, 2] })
+    expect(payload.watchers).toEqual({ add: [3] })
   })
 
   it('omits assignees when the repeatable flags are empty', async () => {
