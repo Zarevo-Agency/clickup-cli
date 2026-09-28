@@ -353,6 +353,83 @@ describe('cup auth output', () => {
   })
 })
 
+describe('error output', () => {
+  const originalCuOutput = process.env['CU_OUTPUT']
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockLoadConfig.mockClear().mockReturnValue(config)
+    mockGetTask.mockReset()
+    mockEditChecklistItem.mockReset()
+    mockIsTTY.mockReset().mockReturnValue(false)
+    mockShouldOutputJson
+      .mockReset()
+      .mockImplementation(forceJson => forceJson || process.env['CU_OUTPUT'] === 'json')
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.exitCode = undefined
+    delete process.env['CU_OUTPUT']
+  })
+
+  afterEach(() => {
+    process.exitCode = undefined
+    if (originalCuOutput === undefined) {
+      delete process.env['CU_OUTPUT']
+    } else {
+      process.env['CU_OUTPUT'] = originalCuOutput
+    }
+  })
+
+  async function runWithApiError(args: string[]) {
+    const { buildProgram } = await loadCli()
+    const { ClickUpApiError } = await import('../../src/errors.js')
+    mockGetTask.mockRejectedValue(new ClickUpApiError(401, 'Token invalid', 'OAUTH_025'))
+    await buildProgram('cup').parseAsync(args, { from: 'user' })
+  }
+
+  it('prints one JSON error line with status and ecode on --json', async () => {
+    await runWithApiError(['task', 'task-1', '--json'])
+
+    expect(console.log).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({
+        error: {
+          message: 'ClickUp API error 401: Token invalid [OAUTH_025]',
+          status: 401,
+          ecode: 'OAUTH_025',
+        },
+      }),
+    )
+    expect(process.exitCode).toBe(1)
+  })
+
+  it('prints JSON errors with null status and ecode for local errors under CU_OUTPUT=json', async () => {
+    process.env['CU_OUTPUT'] = 'json'
+    const { buildProgram } = await loadCli()
+
+    await buildProgram('cup').parseAsync(
+      ['checklist', 'edit-item', 'chk-1', 'item-1', '--assignee', 'abc'],
+      { from: 'user' },
+    )
+
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({
+        error: { message: '--assignee must be a number or "null"', status: null, ecode: null },
+      }),
+    )
+    expect(process.exitCode).toBe(1)
+  })
+
+  it('keeps plain-text errors with the ECODE appended otherwise', async () => {
+    await runWithApiError(['task', 'task-1'])
+
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      'ClickUp API error 401: Token invalid [OAUTH_025]',
+    )
+    expect(process.exitCode).toBe(1)
+  })
+})
+
 describe('cup field --value-file', () => {
   const tmpFile = join(tmpdir(), `cup-value-file-test-${process.pid}.md`)
 

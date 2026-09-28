@@ -63,6 +63,8 @@ When piped (no TTY), the same commands output clean Markdown (or JSON with `--js
 
 `cup auth` exits with code 1 when authentication fails, including with `--json` or `CU_OUTPUT=json`; JSON mode preserves the authentication result on stdout. HTTP 429 responses are retried with bounded backoff. Transient gateway errors (502/503/504) are retried only for reads (GET/HEAD): mutations fail without automatic replay because their outcome may be uncertain. Check the remote state before repeating a failed write.
 
+**Errors:** Failed commands exit with code 1 and print the message on stderr. ClickUp API errors keep ClickUp's error code (ECODE) at the end, e.g. `ClickUp API error 401: Token invalid [OAUTH_025]`. With `--json` or `CU_OUTPUT=json`, stderr gets one JSON line instead: `{"error":{"message":"ClickUp API error 401: Token invalid [OAUTH_025]","status":401,"ecode":"OAUTH_025"}}`. `status` and `ecode` are `null` for errors that did not come from the ClickUp API. Argument parsing errors (unknown option, missing argument) stay plain text.
+
 ![Agent Mode - markdown and JSON output](demos/agent-mode.gif)
 
 ## Why a CLI and not MCP?

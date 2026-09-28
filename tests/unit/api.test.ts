@@ -417,6 +417,37 @@ describe('ClickUpClient', () => {
     await expect(client.getTasksFromList('bad_list')).rejects.toThrow('Not found')
   })
 
+  it('throws ClickUpApiError keeping the ECODE next to the error message', async () => {
+    const { ClickUpApiError } = await import('../../src/errors.js')
+    mockFetch.mockReturnValue(mockResponse({ err: 'Token invalid', ECODE: 'OAUTH_025' }, false))
+    const err: unknown = await client.getTasksFromList('list_1').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ClickUpApiError)
+    expect(err).toMatchObject({
+      message: 'ClickUp API error 400: Token invalid [OAUTH_025]',
+      status: 400,
+      ecode: 'OAUTH_025',
+    })
+  })
+
+  it('keeps the ECODE when an attachment upload fails', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'cup-attach-'))
+    const file = join(dir, 'note.txt')
+    writeFileSync(file, 'hello')
+    mockFetch.mockReturnValue(mockResponse({ err: 'Token invalid', ECODE: 'OAUTH_025' }, false))
+    try {
+      await expect(client.createTaskAttachment('abc123', file)).rejects.toMatchObject({
+        message: 'ClickUp API error 400: Token invalid [OAUTH_025]',
+        status: 400,
+        ecode: 'OAUTH_025',
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('throws on non-JSON response body', async () => {
     mockFetch.mockReturnValue(
       Promise.resolve({
@@ -1449,6 +1480,15 @@ describe('Docs API v3 methods', () => {
     mockFetch.mockReturnValue(mockResponse([]))
     const result = await client.getDocPageListing('w1', 'd1')
     expect(result).toEqual([])
+  })
+
+  it('getDocPageListing keeps the ECODE on API errors', async () => {
+    mockFetch.mockReturnValue(mockResponse({ err: 'Doc not found', ECODE: 'DOC_001' }, false))
+    await expect(client.getDocPageListing('w1', 'd1')).rejects.toMatchObject({
+      message: 'ClickUp API error 400: Doc not found [DOC_001]',
+      status: 400,
+      ecode: 'DOC_001',
+    })
   })
 
   it('getDocPages sends GET to v3 /workspaces/{id}/docs/{docId}/pages with content_format', async () => {
