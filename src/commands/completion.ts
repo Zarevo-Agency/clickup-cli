@@ -508,6 +508,9 @@ ${renderZshTopLevelCommands(name)}
                   _arguments \\
                     '1:task_id:' \\
                     '(-d --description)'{-d,--description}'[Description]:text:' \\
+                    '(--not-billable)--billable[Mark as billable]' \\
+                    '(--billable)--not-billable[Mark as not billable]' \\
+                    '*--tag[Time entry tag]:name:' \\
                     '--json[Force JSON output]'
                   ;;
                 stop)
@@ -521,16 +524,28 @@ ${renderZshTopLevelCommands(name)}
                     '1:task_id:' \\
                     '2:duration:' \\
                     '(-d --description)'{-d,--description}'[Description]:text:' \\
+                    '--start[Start time]:datetime:' \\
+                    '--assignee[Log for user ID or me]:user_id:' \\
+                    '(--not-billable)--billable[Mark as billable]' \\
+                    '(--billable)--not-billable[Mark as not billable]' \\
+                    '*--tag[Time entry tag]:name:' \\
                     '--json[Force JSON output]'
                   ;;
                 list)
                   _arguments \\
-                    '--days[Number of days to look back]:days:' \\
-                    '--task[Filter by task ID]:task_id:' \\
-                    '--space[Filter by space ID]:space_id:' \\
-                    '--list[Filter by list ID]:list_id:' \\
-                    '--assignee[Filter by assignee user ID]:user_id:' \\
-                    '--all[Show all team entries]' \\
+                    '(--start --end)--days[Number of days to look back]:days:' \\
+                    '(--days)--start[Range start]:date:' \\
+                    '(--days)--end[Range end]:date:' \\
+                    '(--space --folder --list)--task[Filter by task ID]:task_id:' \\
+                    '(--task --folder --list)--space[Filter by space ID]:space_id:' \\
+                    '(--task --space --list)--folder[Filter by folder ID]:folder_id:' \\
+                    '(--task --space --folder)--list[Filter by list ID]:list_id:' \\
+                    '(--all)--assignee[Filter by assignee user IDs or me]:user_id:' \\
+                    '(--assignee)--all[Show all team entries]' \\
+                    '(--not-billable)--billable[Only billable entries]' \\
+                    '(--billable)--not-billable[Only non-billable entries]' \\
+                    '--include-task-tags[Include task tags]' \\
+                    '--include-location-names[Include list, folder and space names]' \\
                     '--json[Force JSON output]'
                   ;;
                 update)
@@ -538,6 +553,13 @@ ${renderZshTopLevelCommands(name)}
                     '1:time_entry_id:' \\
                     '(-d --description)'{-d,--description}'[New description]:text:' \\
                     '--duration[New duration]:duration:' \\
+                    '--start[New start time]:datetime:' \\
+                    '--end[New end time]:datetime:' \\
+                    '--task[Move to task ID]:task_id:' \\
+                    '(--not-billable)--billable[Mark as billable]' \\
+                    '(--billable)--not-billable[Mark as not billable]' \\
+                    '(--tag-remove)*--tag-add[Add a tag]:name:' \\
+                    '(--tag-add)*--tag-remove[Remove a tag]:name:' \\
                     '--json[Force JSON output]'
                   ;;
                 delete)
@@ -1208,15 +1230,37 @@ complete -c ${name} -n '__fish_seen_subcommand_from time; and not __fish_seen_su
 complete -c ${name} -n '__fish_seen_subcommand_from time; and not __fish_seen_subcommand_from start stop status log list update delete' -a delete -d 'Delete a time entry'
 complete -c ${name} -n '__fish_seen_subcommand_from start stop status log list update delete; and __fish_seen_subcommand_from time' -l json -d 'Force JSON output'
 complete -c ${name} -n '__fish_seen_subcommand_from start; and __fish_seen_subcommand_from time' -s d -l description -d 'Description'
+complete -c ${name} -n '__fish_seen_subcommand_from start; and __fish_seen_subcommand_from time' -l billable -d 'Mark as billable'
+complete -c ${name} -n '__fish_seen_subcommand_from start; and __fish_seen_subcommand_from time' -l not-billable -d 'Mark as not billable'
+complete -c ${name} -n '__fish_seen_subcommand_from start; and __fish_seen_subcommand_from time' -l tag -d 'Time entry tag'
 complete -c ${name} -n '__fish_seen_subcommand_from log; and __fish_seen_subcommand_from time' -s d -l description -d 'Description'
+complete -c ${name} -n '__fish_seen_subcommand_from log; and __fish_seen_subcommand_from time' -l start -d 'Start time'
+complete -c ${name} -n '__fish_seen_subcommand_from log; and __fish_seen_subcommand_from time' -l assignee -d 'Log for user ID or me'
+complete -c ${name} -n '__fish_seen_subcommand_from log; and __fish_seen_subcommand_from time' -l billable -d 'Mark as billable'
+complete -c ${name} -n '__fish_seen_subcommand_from log; and __fish_seen_subcommand_from time' -l not-billable -d 'Mark as not billable'
+complete -c ${name} -n '__fish_seen_subcommand_from log; and __fish_seen_subcommand_from time' -l tag -d 'Time entry tag'
 complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l days -d 'Number of days to look back'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l start -d 'Range start'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l end -d 'Range end'
 complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l task -d 'Filter by task ID'
 complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l space -d 'Filter by space ID'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l folder -d 'Filter by folder ID'
 complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l list -d 'Filter by list ID'
-complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l assignee -d 'Filter by assignee user ID'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l assignee -d 'Filter by assignee user IDs or me'
 complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l all -d 'Show all team entries'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l billable -d 'Only billable entries'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l not-billable -d 'Only non-billable entries'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l include-task-tags -d 'Include task tags'
+complete -c ${name} -n '__fish_seen_subcommand_from list; and __fish_seen_subcommand_from time' -l include-location-names -d 'Include list, folder and space names'
 complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -s d -l description -d 'New description'
 complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l duration -d 'New duration'
+complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l start -d 'New start time'
+complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l end -d 'New end time'
+complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l task -d 'Move to task ID'
+complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l billable -d 'Mark as billable'
+complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l not-billable -d 'Mark as not billable'
+complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l tag-add -d 'Add a tag'
+complete -c ${name} -n '__fish_seen_subcommand_from update; and __fish_seen_subcommand_from time' -l tag-remove -d 'Remove a tag'
 
 complete -c ${name} -n '__fish_seen_subcommand_from attach' -F
 

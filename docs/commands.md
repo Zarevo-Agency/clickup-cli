@@ -1248,12 +1248,16 @@ Start tracking time on a task. Creates a running timer.
 ```bash
 cup time start abc123
 cup time start abc123 -d "Working on feature"
+cup time start abc123 --billable --tag consulting
 cup time start abc123 --json
 ```
 
 | Flag                | Required | Description                    |
 | ------------------- | -------- | ------------------------------ |
 | `-d, --description` | no       | Description for the time entry |
+| `--billable`        | no       | Mark as billable               |
+| `--not-billable`    | no       | Mark as not billable           |
+| `--tag <name>`      | no       | Time entry tag (repeatable)    |
 | `--json`            | no       | Force JSON output              |
 
 ### `cup time stop`
@@ -1276,61 +1280,99 @@ cup time status --json
 
 ### `cup time log <taskId> <duration>`
 
-Log a manual time entry. Duration accepts human-readable format: "2h", "30m", "1h30m", or raw milliseconds.
+Log a manual time entry. Duration accepts human-readable format: "2h", "30m", "1h30m", or raw milliseconds. Without `--start` the entry ends now (start = now minus duration).
+
+`--tag` reuses the name and colors of an existing time entry tag in the workspace (matched case-insensitively); unknown names are sent with default colors.
 
 ```bash
 cup time log abc123 2h
 cup time log abc123 30m -d "Code review"
+cup time log abc123 1h30m --start 2026-09-01T09:00 --billable --tag consulting
+cup time log abc123 1h --assignee 12345
 cup time log abc123 1h30m --json
 ```
 
-| Flag                | Required | Description                    |
-| ------------------- | -------- | ------------------------------ |
-| `-d, --description` | no       | Description for the time entry |
-| `--json`            | no       | Force JSON output              |
+| Flag                  | Required | Description                                                                                          |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `-d, --description`   | no       | Description for the time entry                                                                       |
+| `--start <datetime>`  | no       | Start time: `YYYY-MM-DDTHH:MM` in your ClickUp timezone, or ISO 8601 with offset (date-only = 00:00) |
+| `--assignee <userId>` | no       | Log the entry for another user (user ID or `me`; others need admin rights)                           |
+| `--billable`          | no       | Mark as billable                                                                                     |
+| `--not-billable`      | no       | Mark as not billable                                                                                 |
+| `--tag <name>`        | no       | Time entry tag (repeatable)                                                                          |
+| `--json`              | no       | Force JSON output                                                                                    |
 
 ### `cup time list`
 
-List recent time entries. Defaults to the current user's entries (last 7 days). Use `--all` to show all team entries.
+List recent time entries. Defaults to the current user's entries (last 7 days). Use `--all` to show all team entries (queries every workspace member; ClickUp allows this only for workspace owners and admins).
 
 **Breaking change:** previously returned all team entries by default. Now returns only the authenticated user's entries unless `--all` is passed.
+
+Use `--start`/`--end` for a fixed range (e.g. a billing month) instead of `--days`. Dates are read in your ClickUp timezone; a date-only `--end` includes that whole day, and `--end` defaults to now. All filters run server-side. ClickUp accepts only one location filter per request: `--space`, `--folder`, `--list` or `--task`.
+
+`--json` returns the raw entries, including `billable` and `tags` (plus `task_tags` / `task_location` with the include flags).
 
 ```bash
 cup time list
 cup time list --all           # all team entries
 cup time list --days 14
+cup time list --start 2026-09-01 --end 2026-09-30 --billable --json
 cup time list --task abc123
 cup time list --space <spaceId>
+cup time list --folder <folderId>
 cup time list --list <listId>
 cup time list --assignee <userId>
+cup time list --assignee me,12345
+cup time list --all --include-location-names --json
 cup time list --days 7 --json
 ```
 
-| Flag                  | Required | Description                                |
-| --------------------- | -------- | ------------------------------------------ |
-| `--days <n>`          | no       | Number of days to look back (default: 7)   |
-| `--task <taskId>`     | no       | Filter entries by task ID                  |
-| `--space <spaceId>`   | no       | Filter entries by space ID                 |
-| `--list <listId>`     | no       | Filter entries by list ID                  |
-| `--assignee <userId>` | no       | Filter entries by assignee user ID         |
-| `--all`               | no       | Show all team entries (default: only mine) |
-| `--json`              | no       | Force JSON output                          |
+| Flag                       | Required | Description                                                        |
+| -------------------------- | -------- | ------------------------------------------------------------------ |
+| `--days <n>`               | no       | Number of days to look back (default: 7; not with `--start/--end`) |
+| `--start <date>`           | no       | Range start (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`, your timezone)    |
+| `--end <date>`             | no       | Range end (requires `--start`; date-only includes the whole day)   |
+| `--task <taskId>`          | no       | Filter entries by task ID (custom task IDs work)                   |
+| `--space <spaceId>`        | no       | Filter entries by space ID                                         |
+| `--folder <folderId>`      | no       | Filter entries by folder ID                                        |
+| `--list <listId>`          | no       | Filter entries by list ID                                          |
+| `--assignee <userId>`      | no       | Filter by user ID(s), comma-separated, or `me`                     |
+| `--all`                    | no       | Show all team entries (default: only mine)                         |
+| `--billable`               | no       | Only billable entries                                              |
+| `--not-billable`           | no       | Only non-billable entries                                          |
+| `--include-task-tags`      | no       | Add the task's tags (`task_tags`)                                  |
+| `--include-location-names` | no       | Add list, folder and space names (`task_location`)                 |
+| `--json`                   | no       | Force JSON output                                                  |
 
 ### `cup time update <timeEntryId>`
 
-Update a time entry's description or duration.
+Update a time entry. Provide at least one flag besides `--json`.
+
+ClickUp needs start and end together: pass `--start` and `--end`, or one of them with `--duration` (the other bound is computed). ClickUp allows one tag action per request, so `--tag-add` and `--tag-remove` cannot be combined. Tag names are matched against existing time entry tags like in `cup time log`.
 
 ```bash
 cup time update te123 -d "Updated description"
 cup time update te123 --duration 3h
+cup time update te123 --start 2026-09-01T09:00 --end 2026-09-01T11:30
+cup time update te123 --start 2026-09-01T09:00 --duration 2h
+cup time update te123 --billable --tag-add consulting
+cup time update te123 --tag-remove consulting
+cup time update te123 --task abc123
 cup time update te123 -d "Review" --duration 1h30m --json
 ```
 
-| Flag                    | Required   | Description                     |
-| ----------------------- | ---------- | ------------------------------- |
-| `-d, --description`     | one of two | New description                 |
-| `--duration <duration>` | one of two | New duration (e.g. "2h", "30m") |
-| `--json`                | no         | Force JSON output               |
+| Flag                    | Required | Description                                                  |
+| ----------------------- | -------- | ------------------------------------------------------------ |
+| `-d, --description`     | no       | New description (`""` clears it)                             |
+| `--duration <duration>` | no       | New duration (e.g. "2h", "30m")                              |
+| `--start <datetime>`    | no       | New start time (with `--end` or `--duration`; your timezone) |
+| `--end <datetime>`      | no       | New end time (with `--start` or `--duration`; your timezone) |
+| `--task <taskId>`       | no       | Move the entry to another task                               |
+| `--billable`            | no       | Mark as billable                                             |
+| `--not-billable`        | no       | Mark as not billable                                         |
+| `--tag-add <name>`      | no       | Add a tag (repeatable)                                       |
+| `--tag-remove <name>`   | no       | Remove a tag (repeatable)                                    |
+| `--json`                | no       | Force JSON output                                            |
 
 ### `cup time delete <timeEntryId>`
 

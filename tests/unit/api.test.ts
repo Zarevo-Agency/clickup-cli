@@ -1206,18 +1206,101 @@ describe('time tracking API methods', () => {
     expect(url).toContain('end_date=2000')
   })
 
-  it('getTimeEntries filters by taskId client-side', async () => {
-    mockFetch.mockReturnValue(
-      mockResponse({
-        data: [
-          { id: 'te1', task: { id: 't1' } },
-          { id: 'te2', task: { id: 't2' } },
-        ],
-      }),
-    )
+  it('getTimeEntries sends the task filter server-side and returns entries unfiltered', async () => {
+    const entries = [
+      { id: 'te1', task: { id: 't1' } },
+      { id: 'te2', task: { id: 't1' } },
+    ]
+    mockFetch.mockReturnValue(mockResponse({ data: entries }))
     const result = await client.getTimeEntries('team1', { taskId: 't1' })
-    expect(result).toHaveLength(1)
-    expect(result[0]!.id).toBe('te1')
+    expect(result).toEqual(entries)
+    const url = new URL(String(mockFetch.mock.calls[0]![0]))
+    expect(url.searchParams.get('task_id')).toBe('t1')
+    expect(url.searchParams.has('custom_task_ids')).toBe(false)
+  })
+
+  it('getTimeEntries adds custom_task_ids and team_id for a custom task ID', async () => {
+    mockFetch.mockReturnValue(mockResponse({ data: [] }))
+    await client.getTimeEntries('team1', { taskId: 'https://app.clickup.com/t/team1/PROJ-9' })
+    const url = new URL(String(mockFetch.mock.calls[0]![0]))
+    expect(url.searchParams.get('task_id')).toBe('PROJ-9')
+    expect(url.searchParams.get('custom_task_ids')).toBe('true')
+    expect(url.searchParams.get('team_id')).toBe('team1')
+  })
+
+  it('getTimeEntries maps billable, folder, assignee and include flags to query params', async () => {
+    mockFetch.mockReturnValue(mockResponse({ data: [] }))
+    await client.getTimeEntries('team1', {
+      folderId: 'f1',
+      assigneeId: '11,12',
+      isBillable: false,
+      includeTaskTags: true,
+      includeLocationNames: true,
+    })
+    const url = new URL(String(mockFetch.mock.calls[0]![0]))
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      folder_id: 'f1',
+      assignee: '11,12',
+      is_billable: 'false',
+      include_task_tags: 'true',
+      include_location_names: 'true',
+    })
+  })
+
+  it('createTimeEntry sends billable, tags, assignee and explicit start', async () => {
+    mockFetch.mockReturnValue(mockResponse({ data: { id: 'te1' } }))
+    const tags = [{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }]
+    await client.createTimeEntry('team1', 'task1', 60000, {
+      start: 1000,
+      billable: true,
+      tags,
+      assignee: 7,
+    })
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body).toEqual({
+      tid: 'task1',
+      start: 1000,
+      duration: 60000,
+      billable: true,
+      tags,
+      assignee: 7,
+    })
+  })
+
+  it('startTimeEntry sends billable and tags', async () => {
+    mockFetch.mockReturnValue(mockResponse({ data: { id: 'te1' } }))
+    await client.startTimeEntry('team1', 'task1', undefined, {
+      billable: false,
+      tags: [{ name: 'review' }],
+    })
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body).toMatchObject({ tid: 'task1', billable: false, tags: [{ name: 'review' }] })
+  })
+
+  it('updateTimeEntry adds custom ID params when moving to a custom task ID', async () => {
+    const { ClickUpClient } = await import('../../src/api.js')
+    const teamClient = new ClickUpClient({ apiToken: 'pk_test', teamId: 'team1' })
+    mockFetch.mockReturnValue(mockResponse({ data: { id: 'te1' } }))
+    await teamClient.updateTimeEntry('team1', 'te1', { tid: 'PROJ-9', billable: true })
+    const url = String(mockFetch.mock.calls[0]![0])
+    expect(url).toContain('/team/team1/time_entries/te1?custom_task_ids=true&team_id=team1')
+    expect((mockFetch.mock.calls[0]![1] as RequestInit).body).toBe(
+      JSON.stringify({ tid: 'PROJ-9', billable: true }),
+    )
+  })
+
+  it('getTimeEntryTags reads the workspace time entry tags', async () => {
+    const tags = [{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000', creator: 1 }]
+    mockFetch.mockReturnValue(mockResponse({ data: tags }))
+    const result = await client.getTimeEntryTags('team1')
+    expect(result).toEqual(tags)
+    expect(String(mockFetch.mock.calls[0]![0])).toContain('/team/team1/time_entries/tags')
   })
 
   it('deleteTimeEntry sends DELETE to /team/{teamId}/time_entries/{id}', async () => {

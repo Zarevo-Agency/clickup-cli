@@ -8,6 +8,11 @@ const mockGetTimeEntries = vi.fn()
 const mockUpdateTimeEntry = vi.fn()
 const mockDeleteTimeEntry = vi.fn()
 const mockGetMe = vi.fn().mockResolvedValue({ id: 42, username: 'testuser' })
+const mockGetUserTimezone = vi.fn().mockResolvedValue('Europe/Berlin')
+const mockGetTimeEntryTags = vi
+  .fn()
+  .mockResolvedValue([{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }])
+const mockGetWorkspaceMembers = vi.fn()
 
 vi.mock('../../../src/api.js', () => ({
   ClickUpClient: vi.fn().mockImplementation(function () {
@@ -20,6 +25,9 @@ vi.mock('../../../src/api.js', () => ({
       updateTimeEntry: mockUpdateTimeEntry,
       deleteTimeEntry: mockDeleteTimeEntry,
       getMe: mockGetMe,
+      getUserTimezone: mockGetUserTimezone,
+      getTimeEntryTags: mockGetTimeEntryTags,
+      getWorkspaceMembers: mockGetWorkspaceMembers,
     }
   }),
 }))
@@ -49,7 +57,10 @@ describe('startTimer', () => {
 
     const { startTimer } = await import('../../../src/commands/time.js')
     const result = await startTimer(config, 't1', 'working on feature')
-    expect(mockStartTimeEntry).toHaveBeenCalledWith('tm_1', 't1', 'working on feature')
+    expect(mockStartTimeEntry).toHaveBeenCalledWith('tm_1', 't1', 'working on feature', {
+      billable: undefined,
+      tags: [],
+    })
     expect(result.duration).toBe(-1)
   })
 
@@ -58,7 +69,79 @@ describe('startTimer', () => {
 
     const { startTimer } = await import('../../../src/commands/time.js')
     await startTimer(config, 't1')
-    expect(mockStartTimeEntry).toHaveBeenCalledWith('tm_1', 't1', undefined)
+    expect(mockStartTimeEntry).toHaveBeenCalledWith('tm_1', 't1', undefined, {
+      billable: undefined,
+      tags: [],
+    })
+  })
+
+  it('passes billable and tag names without looking up tag colors', async () => {
+    mockStartTimeEntry.mockResolvedValue({ ...baseEntry, duration: -1 })
+    mockGetTimeEntryTags.mockClear()
+
+    const { startTimer } = await import('../../../src/commands/time.js')
+    await startTimer(config, 't1', undefined, { billable: true, tags: ['review', 'review'] })
+    expect(mockStartTimeEntry).toHaveBeenCalledWith('tm_1', 't1', undefined, {
+      billable: true,
+      tags: [{ name: 'review' }],
+    })
+    expect(mockGetTimeEntryTags).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveBillable', () => {
+  it('maps the flag pair to the API value', async () => {
+    const { resolveBillable } = await import('../../../src/commands/time.js')
+    expect(resolveBillable({ billable: true })).toBe(true)
+    expect(resolveBillable({ notBillable: true })).toBe(false)
+    expect(resolveBillable({})).toBeUndefined()
+  })
+
+  it('rejects both flags together', async () => {
+    const { resolveBillable } = await import('../../../src/commands/time.js')
+    expect(() => resolveBillable({ billable: true, notBillable: true })).toThrow(
+      'mutually exclusive',
+    )
+  })
+})
+
+describe('resolveTimeRange', () => {
+  const now = Date.UTC(2026, 8, 15, 12, 0, 0)
+
+  it('defaults to the last 7 days', async () => {
+    const { resolveTimeRange } = await import('../../../src/commands/time.js')
+    expect(resolveTimeRange({}, undefined, now)).toEqual({
+      startDate: now - 7 * 24 * 60 * 60 * 1000,
+      endDate: now,
+    })
+  })
+
+  it('reads dates in the user timezone and makes a date-only end inclusive', async () => {
+    const { resolveTimeRange } = await import('../../../src/commands/time.js')
+    const range = resolveTimeRange({ start: '2026-08-01', end: '2026-08-31' }, 'Europe/Berlin', now)
+    expect(new Date(range.startDate).toISOString()).toBe('2026-07-31T22:00:00.000Z')
+    expect(new Date(range.endDate).toISOString()).toBe('2026-08-31T21:59:59.999Z')
+  })
+
+  it('uses an explicit end time as is and defaults the end to now', async () => {
+    const { resolveTimeRange } = await import('../../../src/commands/time.js')
+    expect(
+      resolveTimeRange({ start: '2026-09-01T08:00', end: '2026-09-01T17:30' }, 'UTC', now),
+    ).toEqual({
+      startDate: Date.UTC(2026, 8, 1, 8, 0),
+      endDate: Date.UTC(2026, 8, 1, 17, 30),
+    })
+    expect(resolveTimeRange({ start: '2026-09-01' }, 'UTC', now).endDate).toBe(now)
+  })
+
+  it('rejects an empty or inverted range', async () => {
+    const { resolveTimeRange } = await import('../../../src/commands/time.js')
+    expect(() => resolveTimeRange({ start: '2026-09-02', end: '2026-09-01' }, 'UTC', now)).toThrow(
+      '--start must be before --end',
+    )
+    expect(() => resolveTimeRange({ start: '2026-10-01' }, 'UTC', now)).toThrow(
+      '--start must be in the past',
+    )
   })
 })
 
@@ -119,6 +202,39 @@ describe('logTime', () => {
   it('throws on invalid duration', async () => {
     const { logTime } = await import('../../../src/commands/time.js')
     await expect(logTime(config, 't1', 'invalid')).rejects.toThrow()
+  })
+
+  it('sends start, assignee, billable and tags with colors', async () => {
+    mockCreateTimeEntry.mockResolvedValue(baseEntry)
+
+    const { logTime } = await import('../../../src/commands/time.js')
+    await logTime(config, 't1', '1h30m', 'workshop', {
+      start: '2026-09-01T09:00',
+      assignee: 'me',
+      billable: true,
+      tags: ['consulting', 'Onsite'],
+    })
+    expect(mockCreateTimeEntry).toHaveBeenCalledWith('tm_1', 't1', 5400000, {
+      description: 'workshop',
+      start: Date.UTC(2026, 8, 1, 7, 0),
+      assignee: 42,
+      billable: true,
+      tags: [
+        { name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' },
+        { name: 'Onsite', tag_fg: '#000000', tag_bg: '#04A9F4' },
+      ],
+    })
+  })
+
+  it('rejects an empty tag or bad assignee before writing', async () => {
+    const { logTime } = await import('../../../src/commands/time.js')
+    await expect(logTime(config, 't1', '1h', undefined, { tags: [' '] })).rejects.toThrow(
+      '--tag requires a tag name',
+    )
+    await expect(logTime(config, 't1', '1h', undefined, { assignee: 'bob' })).rejects.toThrow(
+      'numeric user ID',
+    )
+    expect(mockCreateTimeEntry).not.toHaveBeenCalled()
   })
 })
 
@@ -196,15 +312,69 @@ describe('listTimeEntries', () => {
     )
   })
 
-  it('does not call getMe when --all is set', async () => {
+  it('passes every workspace member as assignee when --all is set', async () => {
     mockGetTimeEntries.mockResolvedValue([])
+    mockGetWorkspaceMembers.mockResolvedValue([
+      { id: 11, username: 'a', email: 'a@example.com' },
+      { id: 12, username: 'b', email: 'b@example.com' },
+    ])
     const { listTimeEntries } = await import('../../../src/commands/time.js')
     await listTimeEntries(config, { all: true })
     expect(mockGetMe).not.toHaveBeenCalled()
+    expect(mockGetWorkspaceMembers).toHaveBeenCalledWith('tm_1')
     expect(mockGetTimeEntries).toHaveBeenCalledWith(
       'tm_1',
-      expect.not.objectContaining({ assigneeId: expect.anything() }),
+      expect.objectContaining({ assigneeId: '11,12' }),
     )
+  })
+
+  it('resolves "me" inside a comma-separated assignee list', async () => {
+    mockGetTimeEntries.mockResolvedValue([])
+    mockGetMe.mockResolvedValue({ id: 42, username: 'me' })
+    const { listTimeEntries } = await import('../../../src/commands/time.js')
+    await listTimeEntries(config, { assigneeId: 'me, 99' })
+    expect(mockGetTimeEntries).toHaveBeenCalledWith(
+      'tm_1',
+      expect.objectContaining({ assigneeId: '42,99' }),
+    )
+  })
+
+  it('passes the date range and server-side filters', async () => {
+    mockGetTimeEntries.mockResolvedValue([baseEntry])
+    const { listTimeEntries } = await import('../../../src/commands/time.js')
+    const result = await listTimeEntries(config, {
+      start: '2026-09-01',
+      end: '2026-09-30',
+      folderId: 'f1',
+      billable: false,
+      includeTaskTags: true,
+      includeLocationNames: true,
+    })
+    expect(mockGetTimeEntries).toHaveBeenCalledWith('tm_1', {
+      startDate: Date.UTC(2026, 7, 31, 22, 0),
+      endDate: Date.UTC(2026, 8, 30, 22, 0) - 1,
+      taskId: undefined,
+      spaceId: undefined,
+      folderId: 'f1',
+      listId: undefined,
+      assigneeId: '42',
+      isBillable: false,
+      includeTaskTags: true,
+      includeLocationNames: true,
+    })
+    expect(result[0]).toMatchObject({ billable: false, tags: [] })
+  })
+
+  it.each([
+    [{ days: 3, start: '2026-09-01' }, '--days cannot be combined with --start/--end'],
+    [{ end: '2026-09-01' }, '--end requires --start'],
+    [{ listId: 'l1', taskId: 't1' }, 'Use only one of --space, --folder, --list, --task'],
+    [{ all: true, assigneeId: '99' }, '--all and --assignee are mutually exclusive'],
+    [{ assigneeId: '99,' }, 'numeric user ID'],
+  ])('rejects invalid options %o', async (opts, message) => {
+    const { listTimeEntries } = await import('../../../src/commands/time.js')
+    await expect(listTimeEntries(config, opts)).rejects.toThrow(message)
+    expect(mockGetTimeEntries).not.toHaveBeenCalled()
   })
 
   it('does not call getMe when explicit assigneeId is provided', async () => {
@@ -312,9 +482,79 @@ describe('updateTimeEntry', () => {
 
   it('throws when no updates provided', async () => {
     const { updateTimeEntry } = await import('../../../src/commands/time.js')
-    await expect(updateTimeEntry(config, 'te1', {})).rejects.toThrow(
-      'Provide --description or --duration to update',
+    await expect(updateTimeEntry(config, 'te1', { tagAdd: [], tagRemove: [] })).rejects.toThrow(
+      'Provide at least one of: --description, --duration',
     )
+  })
+
+  it('allows clearing the description', async () => {
+    mockUpdateTimeEntry.mockResolvedValue(baseEntry)
+    const { updateTimeEntry } = await import('../../../src/commands/time.js')
+    await updateTimeEntry(config, 'te1', { description: '' })
+    expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', { description: '' })
+  })
+
+  it.each([
+    [
+      { start: '2026-09-01T09:00', end: '2026-09-01T11:00' },
+      { start: Date.UTC(2026, 8, 1, 7), end: Date.UTC(2026, 8, 1, 9), duration: 7200000 },
+    ],
+    [
+      { start: '2026-09-01T09:00', duration: '30m' },
+      { start: Date.UTC(2026, 8, 1, 7), end: Date.UTC(2026, 8, 1, 7, 30), duration: 1800000 },
+    ],
+    [
+      { end: '2026-09-01T09:00', duration: '1h' },
+      { start: Date.UTC(2026, 8, 1, 6), end: Date.UTC(2026, 8, 1, 7), duration: 3600000 },
+    ],
+  ])('sends start, end and duration together for %o', async (opts, expected) => {
+    mockUpdateTimeEntry.mockResolvedValue(baseEntry)
+    const { updateTimeEntry } = await import('../../../src/commands/time.js')
+    await updateTimeEntry(config, 'te1', opts)
+    expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', expected)
+  })
+
+  it('sends task, billable and added tags', async () => {
+    mockUpdateTimeEntry.mockResolvedValue(baseEntry)
+    const { updateTimeEntry } = await import('../../../src/commands/time.js')
+    await updateTimeEntry(config, 'te1', {
+      taskId: 'PROJ-7',
+      billable: false,
+      tagAdd: ['consulting'],
+      tagRemove: [],
+    })
+    expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', {
+      tid: 'PROJ-7',
+      billable: false,
+      tags: [{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }],
+      tag_action: 'add',
+    })
+  })
+
+  it('uses tag_action remove for --tag-remove', async () => {
+    mockUpdateTimeEntry.mockResolvedValue(baseEntry)
+    const { updateTimeEntry } = await import('../../../src/commands/time.js')
+    await updateTimeEntry(config, 'te1', { tagRemove: ['Consulting'] })
+    expect(mockUpdateTimeEntry).toHaveBeenCalledWith('tm_1', 'te1', {
+      tags: [{ name: 'Consulting', tag_fg: '#ffffff', tag_bg: '#ff0000' }],
+      tag_action: 'remove',
+    })
+  })
+
+  it.each([
+    [{ tagAdd: ['a'], tagRemove: ['b'] }, '--tag-add and --tag-remove cannot be combined'],
+    [{ start: '2026-09-01T09:00' }, '--start and --end must be given together'],
+    [{ end: '2026-09-01T09:00' }, '--start and --end must be given together'],
+    [
+      { start: '2026-09-01T09:00', end: '2026-09-01T10:00', duration: '1h' },
+      'at most two of --start, --end, --duration',
+    ],
+    [{ start: '2026-09-01T10:00', end: '2026-09-01T09:00' }, '--start must be before --end'],
+    [{ taskId: ' ' }, '--task requires a task ID'],
+  ])('rejects %o before writing', async (opts, message) => {
+    const { updateTimeEntry } = await import('../../../src/commands/time.js')
+    await expect(updateTimeEntry(config, 'te1', opts)).rejects.toThrow(message)
+    expect(mockUpdateTimeEntry).not.toHaveBeenCalled()
   })
 })
 
