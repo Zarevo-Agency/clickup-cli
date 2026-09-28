@@ -638,7 +638,7 @@ export const commandMetadata = [
   {
     name: 'docs',
     description: 'List workspace docs (optionally filter by name)',
-    flags: ['--json'],
+    flags: ['--creator', '--parent', '--parent-type', '--archived', '--deleted', '--json'],
     quickReference: [
       { section: 'read', usage: 'docs [query]', description: 'List workspace docs' },
     ],
@@ -654,7 +654,15 @@ export const commandMetadata = [
   {
     name: 'doc-create',
     description: 'Create a new doc',
-    flags: ['-c', '--content', '--json'],
+    flags: [
+      '-c',
+      '--content',
+      '--parent',
+      '--parent-type',
+      '--visibility',
+      '--no-create-page',
+      '--json',
+    ],
     quickReference: [
       { section: 'write', usage: 'doc-create <title>', description: 'Create a new doc' },
     ],
@@ -674,7 +682,15 @@ export const commandMetadata = [
   {
     name: 'doc-page-create',
     description: 'Create a page in a doc',
-    flags: ['-c', '--content', '--content-file', '--parent-page', '--json'],
+    flags: [
+      '-c',
+      '--content',
+      '--content-file',
+      '--parent-page',
+      '--sub-title',
+      '--content-format',
+      '--json',
+    ],
     quickReference: [
       {
         section: 'write',
@@ -686,7 +702,16 @@ export const commandMetadata = [
   {
     name: 'doc-page-edit',
     description: 'Edit a doc page',
-    flags: ['--name', '-c', '--content', '--content-file', '--json'],
+    flags: [
+      '--name',
+      '--sub-title',
+      '-c',
+      '--content',
+      '--content-file',
+      '--mode',
+      '--content-format',
+      '--json',
+    ],
     quickReference: [
       {
         section: 'write',

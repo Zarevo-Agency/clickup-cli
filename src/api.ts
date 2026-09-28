@@ -346,6 +346,32 @@ export interface Doc {
   public?: boolean
 }
 
+/** Search filters for Get Docs; `parentType` is the numeric parent type code. */
+export interface DocSearchFilters {
+  archived?: boolean
+  deleted?: boolean
+  creator?: number
+  parentId?: string
+  parentType?: number
+}
+
+export interface CreateDocOptions {
+  parent?: { id: string; type: number }
+  visibility?: 'PUBLIC' | 'PRIVATE' | 'PERSONAL' | 'HIDDEN'
+  createPage?: boolean
+}
+
+export type DocContentFormat = 'text/md' | 'text/plain'
+
+/** Body of the v3 Edit Page endpoint; keys are sent to ClickUp as-is. */
+export interface DocPageEdit {
+  name?: string
+  sub_title?: string
+  content?: string
+  content_edit_mode?: 'replace' | 'append' | 'prepend'
+  content_format?: DocContentFormat
+}
+
 export interface DocPage {
   id: string
   doc_id: string
@@ -1426,19 +1452,26 @@ export class ClickUpClient {
     return readCollectionField<Doc>(data, 'docs', 'docs')
   }
 
-  /** Every doc in the workspace, following v3 `next_cursor` pagination. */
-  async getAllDocs(workspaceId: string, options: { archived?: boolean } = {}): Promise<Doc[]> {
+  /** Every matching doc in the workspace, sending each `next_cursor` back as `cursor`. */
+  async getAllDocs(workspaceId: string, filters: DocSearchFilters = {}): Promise<Doc[]> {
     const all: Doc[] = []
     let cursor: string | undefined
     for (;;) {
       const params = new URLSearchParams({ limit: '50' })
-      if (options.archived) params.set('archived', 'true')
-      if (cursor) params.set('next_cursor', cursor)
+      if (filters.archived) params.set('archived', 'true')
+      if (filters.deleted) params.set('deleted', 'true')
+      if (filters.creator !== undefined) params.set('creator', String(filters.creator))
+      if (filters.parentId) params.set('parent_id', filters.parentId)
+      if (filters.parentType !== undefined) params.set('parent_type', String(filters.parentType))
+      if (cursor) params.set('cursor', cursor)
       const data = await this.requestV3<{ docs: Doc[]; next_cursor?: string | null }>(
         `/workspaces/${workspaceId}/docs?${params.toString()}`,
       )
       all.push(...readCollectionField<Doc>(data, 'docs', 'docs'))
       if (!data.next_cursor) break
+      if (data.next_cursor === cursor) {
+        throw new Error('ClickUp returned the same docs cursor twice; stopping pagination')
+      }
       cursor = data.next_cursor
     }
     return all
@@ -1453,15 +1486,20 @@ export class ClickUpClient {
   /**
    * Create a Doc.
    *
-   * ClickUp's v3 Create Doc endpoint accepts `name` only — `title` and `content`
-   * are silently ignored (the request still returns 201), which is why passing
-   * them produced unnamed Docs with empty root pages. Initial content must be
-   * written to the Doc's root page via {@link editDocPage}.
+   * ClickUp's v3 Create Doc endpoint accepts `name`, `parent`, `visibility` and
+   * `create_page` — `title` and `content` are silently ignored (the request still
+   * returns 201), which is why passing them produced unnamed Docs with empty root
+   * pages. Initial content must be written to the Doc's root page via
+   * {@link editDocPage}.
    */
-  async createDoc(workspaceId: string, name: string): Promise<Doc> {
+  async createDoc(workspaceId: string, name: string, options: CreateDocOptions = {}): Promise<Doc> {
+    const body: Record<string, unknown> = { name }
+    if (options.parent) body.parent = options.parent
+    if (options.visibility) body.visibility = options.visibility
+    if (options.createPage !== undefined) body.create_page = options.createPage
     return this.requestV3<Doc>(`/workspaces/${workspaceId}/docs`, {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(body),
     })
   }
 
@@ -1471,10 +1509,15 @@ export class ClickUpClient {
     name: string,
     content?: string,
     parentPageId?: string,
+    options: { subTitle?: string; contentFormat?: DocContentFormat } = {},
   ): Promise<DocPage> {
-    const body: Record<string, unknown> = { name, content_format: 'text/md' }
+    const body: Record<string, unknown> = {
+      name,
+      content_format: options.contentFormat ?? 'text/md',
+    }
     if (content) body.content = content
     if (parentPageId) body.parent_page_id = parentPageId
+    if (options.subTitle !== undefined) body.sub_title = options.subTitle
     return this.requestV3<DocPage>(`/workspaces/${workspaceId}/docs/${docId}/pages`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -1485,7 +1528,7 @@ export class ClickUpClient {
     workspaceId: string,
     docId: string,
     pageId: string,
-    updates: { name?: string; content?: string },
+    updates: DocPageEdit,
   ): Promise<DocPage> {
     return this.requestV3<DocPage>(`/workspaces/${workspaceId}/docs/${docId}/pages/${pageId}`, {
       method: 'PUT',

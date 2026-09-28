@@ -666,13 +666,9 @@ describe('binary smoke test', () => {
         },
       )
 
-      expect(mockCreateDocPage).toHaveBeenCalledWith(
-        config,
-        'd1',
-        'Release Notes',
-        '# Heading\n\nBody with $vars and [links](https://example.com).',
-        undefined,
-      )
+      expect(mockCreateDocPage).toHaveBeenCalledWith(config, 'd1', 'Release Notes', {
+        content: '# Heading\n\nBody with $vars and [links](https://example.com).',
+      })
     })
 
     it('doc-page-edit reads content from a file', async () => {
@@ -697,7 +693,36 @@ describe('binary smoke test', () => {
         from: 'user',
       })
 
-      expect(mockCreateDocPage).toHaveBeenCalledWith(config, 'd1', 'Page', '# Inline', undefined)
+      expect(mockCreateDocPage).toHaveBeenCalledWith(config, 'd1', 'Page', { content: '# Inline' })
+    })
+
+    it('passes doc-page-edit subtitle, mode and content format through', async () => {
+      const { buildProgram } = await loadCli()
+      const program = buildProgram('cup')
+
+      await program.parseAsync(
+        [
+          'doc-page-edit',
+          'd1',
+          'p9',
+          '-c',
+          'More',
+          '--sub-title',
+          'Sub',
+          '--mode',
+          'append',
+          '--content-format',
+          'plain',
+        ],
+        { from: 'user' },
+      )
+
+      expect(mockEditDocPage).toHaveBeenCalledWith(config, 'd1', 'p9', {
+        content: 'More',
+        subTitle: 'Sub',
+        mode: 'append',
+        contentFormat: 'plain',
+      })
     })
 
     it('rejects -c combined with --content-file on doc-page-create', async () => {

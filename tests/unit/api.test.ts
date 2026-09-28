@@ -1429,6 +1429,22 @@ describe('Docs API v3 methods', () => {
     expect(body).not.toHaveProperty('content')
   })
 
+  it('createDoc sends parent, visibility and create_page when given', async () => {
+    mockFetch.mockReturnValue(mockResponse({ id: 'd1', name: 'Doc', workspace_id: 1 }))
+    await client.createDoc('w1', 'Doc', {
+      parent: { id: 'folder1', type: 5 },
+      visibility: 'PRIVATE',
+      createPage: false,
+    })
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string) as unknown
+    expect(body).toEqual({
+      name: 'Doc',
+      parent: { id: 'folder1', type: 5 },
+      visibility: 'PRIVATE',
+      create_page: false,
+    })
+  })
+
   it('createDocPage sends POST to v3 /workspaces/{id}/docs/{docId}/pages', async () => {
     const page = { id: 'p1', doc_id: 'd1', name: 'Page 1' }
     mockFetch.mockReturnValue(mockResponse(page))
@@ -1442,6 +1458,21 @@ describe('Docs API v3 methods', () => {
     expect(body.content).toBe('# Content')
     expect(body.parent_page_id).toBe('p0')
     expect(body.content_format).toBe('text/md')
+  })
+
+  it('createDocPage sends sub_title and a non-default content_format', async () => {
+    mockFetch.mockReturnValue(mockResponse({ id: 'p1', doc_id: 'd1', name: 'Page 1' }))
+    await client.createDocPage('w1', 'd1', 'Page 1', 'plain body', undefined, {
+      subTitle: 'Sub',
+      contentFormat: 'text/plain',
+    })
+    const body = JSON.parse((mockFetch.mock.calls[0]![1] as RequestInit).body as string) as unknown
+    expect(body).toEqual({
+      name: 'Page 1',
+      content: 'plain body',
+      sub_title: 'Sub',
+      content_format: 'text/plain',
+    })
   })
 
   it('editDocPage sends PUT to v3 /workspaces/{id}/docs/{docId}/pages/{pageId}', async () => {
@@ -2841,7 +2872,7 @@ describe('getAllDocs cursor pagination', () => {
     vi.unstubAllGlobals()
   })
 
-  it('follows next_cursor until it is absent', async () => {
+  it('sends each next_cursor back as cursor until it is absent', async () => {
     mockFetch
       .mockReturnValueOnce(
         mockResponse({ docs: [{ id: 'd1', name: 'A', workspace_id: 1 }], next_cursor: 'abc' }),
@@ -2854,16 +2885,51 @@ describe('getAllDocs cursor pagination', () => {
     const docs = await client.getAllDocs('ws1')
     expect(docs.map(d => d.id)).toEqual(['d1', 'd2'])
     expect(mockFetch).toHaveBeenCalledTimes(2)
-    const second = String(mockFetch.mock.calls[1]![0])
-    expect(second).toContain('next_cursor=abc')
-    expect(second).toContain('limit=50')
+    const second = new URL(String(mockFetch.mock.calls[1]![0]))
+    expect(second.searchParams.get('cursor')).toBe('abc')
+    expect(second.searchParams.has('next_cursor')).toBe(false)
+    expect(second.searchParams.get('limit')).toBe('50')
   })
 
-  it('includes archived docs when asked', async () => {
+  it('sends search filters on every page', async () => {
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ docs: [], next_cursor: 'abc' }))
+      .mockReturnValueOnce(mockResponse({ docs: [] }))
+    const { ClickUpClient } = await import('../../src/api.js')
+    const client = new ClickUpClient({ apiToken: 'pk_test' })
+    await client.getAllDocs('ws1', {
+      archived: true,
+      deleted: true,
+      creator: 42,
+      parentId: 'folder1',
+      parentType: 5,
+    })
+    for (const call of mockFetch.mock.calls) {
+      const params = new URL(String(call[0])).searchParams
+      expect(params.get('archived')).toBe('true')
+      expect(params.get('deleted')).toBe('true')
+      expect(params.get('creator')).toBe('42')
+      expect(params.get('parent_id')).toBe('folder1')
+      expect(params.get('parent_type')).toBe('5')
+    }
+  })
+
+  it('omits filters that were not given', async () => {
     mockFetch.mockReturnValueOnce(mockResponse({ docs: [] }))
     const { ClickUpClient } = await import('../../src/api.js')
     const client = new ClickUpClient({ apiToken: 'pk_test' })
-    await client.getAllDocs('ws1', { archived: true })
-    expect(String(mockFetch.mock.calls[0]![0])).toContain('archived=true')
+    await client.getAllDocs('ws1')
+    const params = new URL(String(mockFetch.mock.calls[0]![0])).searchParams
+    expect([...params.keys()]).toEqual(['limit'])
+  })
+
+  it('stops with an error when the cursor does not advance', async () => {
+    mockFetch
+      .mockReturnValueOnce(mockResponse({ docs: [], next_cursor: 'abc' }))
+      .mockReturnValueOnce(mockResponse({ docs: [], next_cursor: 'abc' }))
+    const { ClickUpClient } = await import('../../src/api.js')
+    const client = new ClickUpClient({ apiToken: 'pk_test' })
+    await expect(client.getAllDocs('ws1')).rejects.toThrow(/same docs cursor/)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 })

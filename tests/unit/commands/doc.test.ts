@@ -131,7 +131,7 @@ describe('createDoc', () => {
     const { createDoc } = await import('../../../src/commands/doc.js')
     const result = await createDoc(mockConfig, 'New Doc')
     expect(result).toEqual({ id: 'd1', title: 'New Doc' })
-    expect(mockCreateDoc).toHaveBeenCalledWith('team1', 'New Doc')
+    expect(mockCreateDoc).toHaveBeenCalledWith('team1', 'New Doc', {})
     // Root page is created unnamed by ClickUp, so it is named after the Doc.
     expect(mockEditDocPage).toHaveBeenCalledWith('team1', 'd1', 'p1', { name: 'New Doc' })
   })
@@ -143,7 +143,7 @@ describe('createDoc', () => {
     const { createDoc } = await import('../../../src/commands/doc.js')
     await createDoc(mockConfig, 'Doc', '# Content')
     // Content is not accepted by Create Doc; it must go through the page edit.
-    expect(mockCreateDoc).toHaveBeenCalledWith('team1', 'Doc')
+    expect(mockCreateDoc).toHaveBeenCalledWith('team1', 'Doc', {})
     expect(mockEditDocPage).toHaveBeenCalledWith('team1', 'd1', 'p1', {
       name: 'Doc',
       content: '# Content',
@@ -173,6 +173,45 @@ describe('createDoc', () => {
     await expect(createDoc(mockConfig, '  ')).rejects.toThrow('Doc title cannot be empty')
     expect(mockCreateDoc).not.toHaveBeenCalled()
   })
+
+  it('creates the doc under a parent with visibility, then names the root page', async () => {
+    mockCreateDoc.mockResolvedValue({ id: 'd1', name: 'Doc', workspace_id: 1 })
+    mockGetDocPageListing.mockResolvedValue([{ id: 'p1', doc_id: 'd1', name: null }])
+    mockEditDocPage.mockResolvedValue({ id: 'p1', doc_id: 'd1', name: 'Doc' })
+    const { createDoc } = await import('../../../src/commands/doc.js')
+    await createDoc(mockConfig, 'Doc', undefined, {
+      parent: 'list1',
+      parentType: 'LIST',
+      visibility: 'private',
+    })
+    expect(mockCreateDoc).toHaveBeenCalledWith('team1', 'Doc', {
+      parent: { id: 'list1', type: 6 },
+      visibility: 'PRIVATE',
+    })
+    expect(mockEditDocPage).toHaveBeenCalledWith('team1', 'd1', 'p1', { name: 'Doc' })
+  })
+
+  it('skips the root page step when created without a page', async () => {
+    mockCreateDoc.mockResolvedValue({ id: 'd1', name: 'Doc', workspace_id: 1 })
+    const { createDoc } = await import('../../../src/commands/doc.js')
+    const result = await createDoc(mockConfig, 'Doc', undefined, { createPage: false })
+    expect(result).toEqual({ id: 'd1', title: 'Doc' })
+    expect(mockCreateDoc).toHaveBeenCalledWith('team1', 'Doc', { createPage: false })
+    expect(mockGetDocPageListing).not.toHaveBeenCalled()
+    expect(mockEditDocPage).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [{ parent: 'folder1' }, undefined, '--parent requires --parent-type'],
+    [{ parentType: 'folder' }, undefined, '--parent-type requires --parent'],
+    [{ parent: 'folder1', parentType: 'board' }, undefined, 'Invalid parent type "board"'],
+    [{ visibility: 'secret' }, undefined, 'Invalid visibility "secret"'],
+    [{ createPage: false }, '# Body', 'cannot be used with --no-create-page'],
+  ])('rejects %o (content %s) before creating anything', async (flags, content, message) => {
+    const { createDoc } = await import('../../../src/commands/doc.js')
+    await expect(createDoc(mockConfig, 'Doc', content, flags)).rejects.toThrow(message)
+    expect(mockCreateDoc).not.toHaveBeenCalled()
+  })
 })
 
 describe('createDocPage', () => {
@@ -186,15 +225,39 @@ describe('createDocPage', () => {
     const { createDocPage } = await import('../../../src/commands/doc.js')
     const result = await createDocPage(mockConfig, 'd1', 'Page 1')
     expect(result).toEqual(page)
-    expect(mockCreateDocPage).toHaveBeenCalledWith('team1', 'd1', 'Page 1', undefined, undefined)
+    expect(mockCreateDocPage).toHaveBeenCalledWith(
+      'team1',
+      'd1',
+      'Page 1',
+      undefined,
+      undefined,
+      {},
+    )
   })
 
-  it('passes content and parentPageId when provided', async () => {
+  it('passes content, parent page, subtitle and content format when provided', async () => {
     const page = { id: 'p2', doc_id: 'd1', name: 'Sub Page' }
     mockCreateDocPage.mockResolvedValue(page)
     const { createDocPage } = await import('../../../src/commands/doc.js')
-    await createDocPage(mockConfig, 'd1', 'Sub Page', '# Content', 'p1')
-    expect(mockCreateDocPage).toHaveBeenCalledWith('team1', 'd1', 'Sub Page', '# Content', 'p1')
+    await createDocPage(mockConfig, 'd1', 'Sub Page', {
+      content: 'Body',
+      parentPageId: 'p1',
+      subTitle: 'Sub',
+      contentFormat: 'plain',
+    })
+    expect(mockCreateDocPage).toHaveBeenCalledWith('team1', 'd1', 'Sub Page', 'Body', 'p1', {
+      subTitle: 'Sub',
+      contentFormat: 'text/plain',
+    })
+  })
+
+  it.each([
+    [{ contentFormat: 'md' }, '--content-format requires -c/--content or --content-file'],
+    [{ content: 'Body', contentFormat: 'html' }, 'Invalid content format "html"'],
+  ])('rejects %o before creating the page', async (options, message) => {
+    const { createDocPage } = await import('../../../src/commands/doc.js')
+    await expect(createDocPage(mockConfig, 'd1', 'Page', options)).rejects.toThrow(message)
+    expect(mockCreateDocPage).not.toHaveBeenCalled()
   })
 
   it('throws on empty name', async () => {
@@ -226,8 +289,45 @@ describe('editDocPage', () => {
   it('throws when no updates provided', async () => {
     const { editDocPage } = await import('../../../src/commands/doc.js')
     await expect(editDocPage(mockConfig, 'd1', 'p1', {})).rejects.toThrow(
-      'Provide --name or --content to update',
+      'Provide at least one of: --name, --sub-title, -c/--content, --content-file',
     )
+  })
+
+  it('maps subtitle, edit mode and content format to the API fields', async () => {
+    mockEditDocPage.mockResolvedValue({ id: 'p1', doc_id: 'd1', name: 'Page' })
+    const { editDocPage } = await import('../../../src/commands/doc.js')
+    await editDocPage(mockConfig, 'd1', 'p1', {
+      subTitle: 'Sub',
+      content: 'More',
+      mode: 'Append',
+      contentFormat: 'text/plain',
+    })
+    expect(mockEditDocPage).toHaveBeenCalledWith('team1', 'd1', 'p1', {
+      sub_title: 'Sub',
+      content: 'More',
+      content_edit_mode: 'append',
+      content_format: 'text/plain',
+    })
+  })
+
+  it('updates only the subtitle', async () => {
+    mockEditDocPage.mockResolvedValue({ id: 'p1', doc_id: 'd1', name: 'Page' })
+    const { editDocPage } = await import('../../../src/commands/doc.js')
+    await editDocPage(mockConfig, 'd1', 'p1', { subTitle: 'Sub' })
+    expect(mockEditDocPage).toHaveBeenCalledWith('team1', 'd1', 'p1', { sub_title: 'Sub' })
+  })
+
+  it.each([
+    [{ name: 'N', mode: 'append' }, '--mode requires -c/--content or --content-file'],
+    [
+      { name: 'N', contentFormat: 'md' },
+      '--content-format requires -c/--content or --content-file',
+    ],
+    [{ content: 'x', mode: 'merge' }, 'Invalid mode "merge"'],
+  ])('rejects %o before editing', async (options, message) => {
+    const { editDocPage } = await import('../../../src/commands/doc.js')
+    await expect(editDocPage(mockConfig, 'd1', 'p1', options)).rejects.toThrow(message)
+    expect(mockEditDocPage).not.toHaveBeenCalled()
   })
 })
 
