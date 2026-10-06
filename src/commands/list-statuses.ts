@@ -51,10 +51,10 @@ export function parseStatusNames(
     .map(entry => entry.trim().toLowerCase())
     .filter(Boolean)
     .map(entry => {
-      const [name = '', type] = entry.split(':').map(part => part.trim())
-      if (type !== undefined && !STATUS_TYPES.includes(type)) {
-        throw new Error(`Unknown status type "${type}". Use ${STATUS_TYPES.join(', ')}`)
-      }
+      const separator = entry.lastIndexOf(':')
+      const suffix = entry.slice(separator + 1).trim()
+      const type = separator >= 0 && STATUS_TYPES.includes(suffix) ? suffix : undefined
+      const name = type ? entry.slice(0, separator).trim() : entry
       return { name, type }
     })
   if (entries.length < 2) {
@@ -121,7 +121,11 @@ export async function listStatuses(
     current.map(s => s.status.toLowerCase()).filter(status => !kept.has(status)),
   )
   if (removed.size > 0) {
-    const tasks = await client.getTasksFromList(listId, {}, { includeClosed: true })
+    const [active, archived] = await Promise.all([
+      client.getTasksFromList(listId, {}, { includeClosed: true }),
+      client.getTasksFromList(listId, {}, { includeClosed: true, archived: true }),
+    ])
+    const tasks = [...new Map([...active, ...archived].map(t => [t.id, t])).values()]
     const blocking = tasks.filter(t => removed.has(t.status.status.toLowerCase()))
     if (blocking.length > 0) {
       const used = [...new Set(blocking.map(t => t.status.status))].join(', ')

@@ -57,10 +57,22 @@ describe('parseStatusNames', () => {
     ])
   })
 
-  it('rejects unknown status types', () => {
-    expect(() => parseStatusNames('offen,fertig:finished')).toThrow(
-      'Unknown status type "finished"',
-    )
+  it('keeps colons in status names when the suffix is not a known type', () => {
+    const result = parseStatusNames('open,Review: waiting,finished:approved')
+    expect(result.map(s => [s.status, s.type])).toEqual([
+      ['open', 'open'],
+      ['review: waiting', 'custom'],
+      ['finished:approved', 'closed'],
+    ])
+  })
+
+  it('uses only the last colon for an explicit status type', () => {
+    const result = parseStatusNames('open,Review: waiting : done,closed')
+    expect(result[1]).toEqual({
+      status: 'review: waiting',
+      type: 'done',
+      color: '#008844',
+    })
   })
 
   it('rejects fewer than two statuses', () => {
@@ -104,6 +116,14 @@ describe('listStatuses', () => {
       statuses: parseStatusNames('offen,in arbeit,erledigt'),
     })
     expect(mockGetTasksFromList).toHaveBeenCalledWith('l1', {}, { includeClosed: true })
+    expect(mockGetTasksFromList).toHaveBeenCalledWith(
+      'l1',
+      {},
+      {
+        includeClosed: true,
+        archived: true,
+      },
+    )
     expect(result.changed).toBe(true)
     expect(result.statuses.map(s => s.status)).toEqual(['offen', 'in arbeit', 'erledigt'])
   })
@@ -123,6 +143,42 @@ describe('listStatuses', () => {
     ])
     await expect(listStatuses(config, 'l1', { set: 'offen,erledigt' })).rejects.toThrow(
       '1 task(s) in list l1 still use complete',
+    )
+    expect(mockUpdateList).not.toHaveBeenCalled()
+  })
+
+  it('refuses to drop a status used only by an archived task', async () => {
+    mockGetListWithStatuses.mockResolvedValue(list(defaultStatuses))
+    mockGetTasksFromList
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: 't1', archived: true, status: { status: 'complete', color: '#008844' } },
+      ])
+    await expect(listStatuses(config, 'l1', { set: 'to do,done' })).rejects.toThrow(
+      '1 task(s) in list l1 still use complete',
+    )
+    expect(mockUpdateList).not.toHaveBeenCalled()
+  })
+
+  it('counts blocking tasks once when both queries return the same task', async () => {
+    mockGetListWithStatuses.mockResolvedValue(list(defaultStatuses))
+    mockGetTasksFromList.mockResolvedValue([
+      { id: 't1', status: { status: 'complete', color: '#008844' } },
+    ])
+    await expect(listStatuses(config, 'l1', { set: 'to do,done' })).rejects.toThrow(
+      '1 task(s) in list l1 still use complete',
+    )
+    expect(mockGetTasksFromList).toHaveBeenCalledTimes(2)
+    expect(mockUpdateList).not.toHaveBeenCalled()
+  })
+
+  it('does not write when the archived task query fails', async () => {
+    mockGetListWithStatuses.mockResolvedValue(list(defaultStatuses))
+    mockGetTasksFromList
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('Could not read archived tasks'))
+    await expect(listStatuses(config, 'l1', { set: 'to do,done' })).rejects.toThrow(
+      'Could not read archived tasks',
     )
     expect(mockUpdateList).not.toHaveBeenCalled()
   })

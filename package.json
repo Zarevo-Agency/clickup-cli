@@ -1,6 +1,6 @@
 {
   "name": "@krodak/clickup-cli",
-  "version": "1.46.1",
+  "version": "1.46.2",
   "description": "ClickUp CLI for AI agents and humans",
   "type": "module",
   "license": "MIT",
@@ -54,7 +54,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.1",
-    "dotenv": "^17.3.1",
+    "dotenv": "^18.0.4",
     "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",
@@ -62,6 +62,7 @@
     "tsx": "^4.0.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.59.0",
-    "vitest": "^4.1.1"
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
   }
 }

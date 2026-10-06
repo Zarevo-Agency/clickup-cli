@@ -635,7 +635,7 @@ cup task-members abc123 --json
 
 ### `cup auth`
 
-Check authentication status. Validates your API token and shows your user info.
+Check authentication status. Validates your API token and shows your user info. Failed authentication exits with code 1 in every output mode. With `--json` or `CU_OUTPUT=json`, stdout remains the JSON result (`authenticated: false` on failure), without an additional text error.
 
 ```bash
 cup auth
@@ -1397,9 +1397,9 @@ cup list-create <spaceId> "New List" --copy-statuses-from <spaceId>
 
 ### `cup list-statuses <listId>`
 
-Show the status set of a list, or replace it. `--set` takes comma-separated names: the first becomes the open status, the last the closed one, everything in between is custom. Append `:open`, `:custom`, `:done` or `:closed` to a name to set its type explicitly. Existing statuses keep their color. `--copy-from` copies the set from another list or a space. The list then overrides the space statuses, and the command reads the list back to confirm ClickUp applied them.
+Show the status set of a list, or replace it. `--set` takes comma-separated names, which are lowercased before being sent to ClickUp: the first becomes the open status, the last the closed one, everything in between is custom. Append `:open`, `:custom`, `:done` or `:closed` to a name to set its type explicitly. Only a known type after the last colon is treated as an override; other colons remain part of the name. Existing statuses keep their color. `--copy-from` copies the set from another list or a space. The list then overrides the space statuses, and the command reads the list back to confirm ClickUp applied them.
 
-It refuses to drop a status that any task in the list still uses, including closed tasks: ClickUp matches task statuses by name, so a direct rename orphans those tasks and clears their closed date. To rename, first set a list that keeps the old names, move the tasks, then set the final list. A closed status can only be moved to another closed one if the old one is temporarily `:done`, which keeps the original closed date.
+It refuses to drop a status that any task in the list still uses, including closed and archived tasks: ClickUp matches task statuses by name, so a direct rename orphans those tasks and clears their closed date. To rename, first set a list that keeps the old names, move the tasks, then set the final list. A closed status can only be moved to another closed one if the old one is temporarily `:done`, which keeps the original closed date.
 
 ```bash
 cup list-statuses <listId>
@@ -1412,11 +1412,11 @@ cup update <taskId> --status done
 cup list-statuses <listId> --set "to do,in progress,done"
 ```
 
-| Flag               | Required | Description                                                                    |
-| ------------------ | -------- | ------------------------------------------------------------------------------ |
-| `--set <names>`    | no       | Comma-separated statuses; first is open, last is closed, `name:type` overrides |
-| `--copy-from <id>` | no       | Copy the status set from this list or space ID                                 |
-| `--json`           | no       | Force JSON output                                                              |
+| Flag               | Required | Description                                                                                |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------ |
+| `--set <names>`    | no       | Comma-separated, lowercased statuses; first is open, last is closed, `name:type` overrides |
+| `--copy-from <id>` | no       | Copy the status set from this list or space ID                                             |
+| `--json`           | no       | Force JSON output                                                                          |
 
 ### `cup folder-create <spaceId> <name>`
 
