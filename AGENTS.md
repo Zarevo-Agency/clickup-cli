@@ -54,7 +54,7 @@ docs/
 skills/
   clickup-cli/      # Agent skill file shipped with npm package
 .agents/skills/
-  using-clickup-cli/ # Agent skill (canonical location for npx skills add)
+  clickup/          # Agent skill (canonical location for npx skills add; directory matches skill name)
   releasing-clickup-cli/ # Internal: release process (metadata.internal: true)
   testing-clickup-cli/   # Internal: test guide (metadata.internal: true)
 .claude-plugin/
@@ -93,7 +93,7 @@ npm run format:check # Prettier check
 3. Add to `src/commands/metadata.ts` (completion test will fail otherwise)
 4. Create `tests/unit/commands/<name>.test.ts` with unit tests
 5. Update `README.md` with the new command's documentation
-6. Update `skills/clickup-cli/SKILL.md` with the new command (`.agents/skills/using-clickup-cli/SKILL.md` is a symlink to it)
+6. Update `skills/clickup-cli/SKILL.md` with the new command (`.agents/skills/clickup/SKILL.md` is a symlink to it). The file is excluded from Prettier because it is loaded into agent context: keep its tables compact (`| a | b |`, separator `| --- | --- |`, no column padding)
 7. Update `docs/commands.md` with full reference (examples, flag tables)
 8. Sync docs quick reference: `node --import tsx scripts/sync-command-docs.ts`
 9. If you added a new subcommand group with bespoke completions, update `src/commands/completion.ts`. Top-level flags are picked up automatically from metadata.
@@ -103,7 +103,7 @@ npm run format:check # Prettier check
 When adding or changing flags, output formats, or behavior on any command:
 
 1. Update `README.md` to reflect the change
-2. Update `skills/clickup-cli/SKILL.md` to reflect the change
+2. Update `skills/clickup-cli/SKILL.md` to reflect the change (compact tables, no column padding)
 3. Update `docs/commands.md` with the change
 4. Add new flags to `src/commands/metadata.ts`
 5. Sync docs: `node --import tsx scripts/sync-command-docs.ts`

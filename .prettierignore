@@ -1,2 +1,4 @@
 dist/
 node_modules/
+# Agent skill is loaded into AI context: keep tables compact (prettier pads them with spaces)
+skills/clickup-cli/SKILL.md
