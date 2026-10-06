@@ -61,6 +61,8 @@ Task listing commands (`cup tasks`, `cup search`, `cup sprint`, etc.) present an
 
 When piped (no TTY), the same commands output clean Markdown (or JSON with `--json`). No prompts, no colors — designed for agents and pipelines.
 
+`cup auth` exits with code 1 when authentication fails, including with `--json` or `CU_OUTPUT=json`; JSON mode preserves the authentication result on stdout. HTTP 429 responses are retried with bounded backoff. Transient gateway errors (502/503/504) are retried only for reads (GET/HEAD): mutations fail without automatic replay because their outcome may be uncertain. Check the remote state before repeating a failed write.
+
 ![Agent Mode - markdown and JSON output](demos/agent-mode.gif)
 
 ## Why a CLI and not MCP?
