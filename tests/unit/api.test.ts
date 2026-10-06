@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 const mockFetch = vi.fn()
 
@@ -2535,6 +2538,66 @@ describe('rate limit retry', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 
+  it('labels a 429 retry as rate limiting', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    mockFetch
+      .mockReturnValueOnce(response429('1'))
+      .mockReturnValueOnce(mockResponse({ id: 'abc', name: 'Task' }))
+    const promise = client.getTask('abc')
+    await vi.advanceTimersByTimeAsync(1000)
+    await promise
+    expect(stderr).toHaveBeenCalledWith('Rate limited (429). Retrying in 1s... (attempt 1/3)\n')
+  })
+
+  it.each([502, 503, 504])('does not call a gateway error %i rate limiting', async status => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    mockFetch
+      .mockReturnValueOnce(retryableResponse(status, 'Gateway error'))
+      .mockReturnValueOnce(mockResponse({ id: 'abc', name: 'Task' }))
+    const promise = client.getTask('abc')
+    await vi.advanceTimersByTimeAsync(1000)
+    await promise
+    expect(stderr).toHaveBeenCalledWith(
+      `ClickUp API returned ${status}. Retrying in 1s... (attempt 1/3)\n`,
+    )
+  })
+
+  describe('attachment upload', () => {
+    const uploadPath = join(tmpdir(), `cup-upload-retry-${process.pid}.txt`)
+
+    beforeEach(() => {
+      writeFileSync(uploadPath, 'hello')
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    })
+
+    afterEach(() => {
+      rmSync(uploadPath, { force: true })
+    })
+
+    it('retries an upload explicitly rejected with 429', async () => {
+      vi.spyOn(client as unknown as { sleep: () => Promise<void> }, 'sleep').mockResolvedValue()
+      mockFetch
+        .mockReturnValueOnce(response429('1'))
+        .mockReturnValueOnce(mockResponse({ id: 'att1', title: 'file.txt' }))
+      const result = await client.createTaskAttachment('abc', uploadPath)
+      expect(result.id).toBe('att1')
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it.each([502, 503, 504])('does not replay an upload after HTTP %i', async status => {
+      vi.spyOn(client as unknown as { sleep: () => Promise<void> }, 'sleep').mockResolvedValue()
+      mockFetch
+        .mockReturnValueOnce(retryableResponse(status, 'Gateway error'))
+        .mockReturnValueOnce(mockResponse({ id: 'duplicate', title: 'file.txt' }))
+      const result = await client
+        .createTaskAttachment('abc', uploadPath)
+        .catch((err: unknown) => err)
+      expect(result).toBeInstanceOf(Error)
+      expect((result as Error).message).toContain(String(status))
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('does NOT retry on 400', async () => {
     mockFetch.mockReturnValue(mockResponse({ err: 'bad' }, false))
     await expect(client.getTask('abc')).rejects.toThrow('400')
@@ -2620,6 +2683,29 @@ describe('rate limiter integration', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2)
     expect(acquire).toHaveBeenCalledTimes(2)
     expect(penalize).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits on the configured limiter before an attachment upload', async () => {
+    const uploadPath = join(tmpdir(), `cup-upload-limiter-${process.pid}.txt`)
+    writeFileSync(uploadPath, 'hello')
+    try {
+      const acquire = vi.fn().mockResolvedValue(undefined)
+      const { ClickUpClient } = await import('../../src/api.js')
+      const client = new ClickUpClient({
+        apiToken: 'pk_test',
+        rateLimiter: { acquire, penalize: vi.fn() },
+      })
+      mockFetch.mockReturnValue(mockResponse({ id: 'att1', title: 'file.txt' }))
+
+      await client.createTaskAttachment('abc', uploadPath)
+
+      expect(acquire).toHaveBeenCalledTimes(1)
+      expect(acquire.mock.invocationCallOrder[0]!).toBeLessThan(
+        mockFetch.mock.invocationCallOrder[0]!,
+      )
+    } finally {
+      rmSync(uploadPath, { force: true })
+    }
   })
 
   it('works without a limiter (default)', async () => {

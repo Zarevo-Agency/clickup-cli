@@ -562,23 +562,28 @@ export class ClickUpClient {
     return Math.min(2 ** (attempt - 1) * 1000, 60_000)
   }
 
-  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  private async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    timeoutMs = 30_000,
+  ): Promise<Response> {
     const maxRetries = 3
     const method = (init.method ?? 'GET').toUpperCase()
     const isRead = method === 'GET' || method === 'HEAD'
     let attempt = 0
     for (;;) {
       await this.rateLimiter?.acquire()
-      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30_000) })
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+      const rateLimited = res.status === 429
       const retryable =
-        res.status === 429 ||
-        (isRead && (res.status === 502 || res.status === 503 || res.status === 504))
+        rateLimited || (isRead && (res.status === 502 || res.status === 503 || res.status === 504))
       if (!retryable || attempt >= maxRetries) return res
-      if (res.status === 429) this.rateLimiter?.penalize()
+      if (rateLimited) this.rateLimiter?.penalize()
       attempt++
       const delayMs = this.retryDelayMs(res, attempt)
+      const reason = rateLimited ? 'Rate limited (429)' : `ClickUp API returned ${res.status}`
       process.stderr.write(
-        `Rate limited (${res.status}). Retrying in ${Math.round(delayMs / 1000)}s... (attempt ${attempt}/${maxRetries})\n`,
+        `${reason}. Retrying in ${Math.round(delayMs / 1000)}s... (attempt ${attempt}/${maxRetries})\n`,
       )
       await this.sleep(delayMs)
     }
@@ -1412,12 +1417,11 @@ export class ClickUpClient {
     const fileName = basename(filePath)
     const formData = new FormData()
     formData.append('attachment', new Blob([fileBuffer]), fileName)
-    const res = await fetch(`${BASE_URL}${this.taskPath(taskId, '/attachment')}`, {
-      method: 'POST',
-      headers: { Authorization: this.apiToken },
-      body: formData,
-      signal: AbortSignal.timeout(60_000),
-    })
+    const res = await this.fetchWithRetry(
+      `${BASE_URL}${this.taskPath(taskId, '/attachment')}`,
+      { method: 'POST', headers: { Authorization: this.apiToken }, body: formData },
+      60_000,
+    )
     if (!res.ok) {
       let msg: string
       try {
